@@ -1,4 +1,7 @@
 #include "remote_protocol.h"
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 #include <chrono>
 #include <iostream>

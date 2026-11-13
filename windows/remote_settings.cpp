@@ -19,11 +19,11 @@ namespace {
 COLORREF kBg=RGB(247,249,252),kCard=RGB(255,255,255),kInput=RGB(243,247,252);
 COLORREF kText=RGB(30,42,60),kMuted=RGB(92,108,130),kBlue=RGB(39,105,213);
 COLORREF kAccentText=RGB(255,255,255),kBorder=RGB(215,224,237),kSubtle=RGB(233,241,253);
-constexpr int cEnabled=201,cServer=202,cKey=203,cDevice=204,cPeer=205,cLock=206,cTest=207,cSave=208,cStatus=209,cTrusted=210,cInstall=211;
+constexpr int cEnabled=201,cServer=202,cKey=203,cDevice=204,cPeer=205,cLock=206,cTest=207,cSave=208,cStatus=209,cTrusted=210;
 constexpr UINT kTestFinished=WM_APP+50;
 struct TestResult{bool ok{};std::wstring message;};
 struct Ui{
-    HWND wnd{},enabled{},server{},key{},device{},peer{},lock{},trusted{},test{},save{},status{},install{};
+    HWND wnd{},enabled{},server{},key{},device{},peer{},lock{},trusted{},test{},save{},status{};
     HFONT normal{},bold{},smallFont{},heading{};
     HBRUSH cardBrush{},inputBrush{};
     kb::ui::Palette palette{};
@@ -42,7 +42,7 @@ void Appearance(Ui& ui){
     auto bold=kb::ui::MakeFont(ui.dpi,18,FW_SEMIBOLD);
     auto smallText=kb::ui::MakeFont(ui.dpi,16);
     auto heading=kb::ui::MakeFont(ui.dpi,25,FW_SEMIBOLD);
-    if(ui.normal){for(HWND item:{ui.enabled,ui.server,ui.key,ui.device,ui.peer,ui.lock,ui.trusted,ui.test,ui.save,ui.status,ui.install})
+    if(ui.normal){for(HWND item:{ui.enabled,ui.server,ui.key,ui.device,ui.peer,ui.lock,ui.trusted,ui.test,ui.save,ui.status})
         if(item)SendMessageW(item,WM_SETFONT,reinterpret_cast<WPARAM>(normal),FALSE);}
     for(auto f:{ui.normal,ui.bold,ui.smallFont,ui.heading})if(f)DeleteObject(f);
     ui.normal=normal;ui.bold=bold;ui.smallFont=smallText;ui.heading=heading;
@@ -85,7 +85,6 @@ void Layout(Ui& ui){
     const int left=46, usable=std::max(390,w-92);
     auto place=[&](HWND child,int x,int y,int width,int height){
         Move(child,S(ui,x),S(ui,y),S(ui,width),S(ui,height));};
-    place(ui.install,std::max(45,w-300),21,247,43);
     place(ui.enabled,left,94,usable,43);
     place(ui.server,left,199,usable,44);
     place(ui.key,left,279,usable,44);
@@ -106,6 +105,7 @@ void Paint(Ui& ui){
     kb::ui::Rounded(dc,rect(18,4,w-18,h-12),kCard,S(ui,20));
     Label(dc,S(ui,46),S(ui,22),L"RustDesk API",kText,ui.heading);
     Label(dc,S(ui,46),S(ui,63),L"通过服务器事件管理远程解锁和连接结束后的锁定",kMuted,ui.normal);
+    Label(dc,S(ui,std::max(480,w-340)),S(ui,34),L"后台服务请到「服务管理」页面操作",kMuted,ui.smallFont);
     Label(dc,S(ui,46),S(ui,150),L"请使用可信服务器，并限制连接方设备 ID。",kMuted,ui.smallFont);
     Label(dc,S(ui,46),S(ui,171),L"RustDesk API 服务器地址（HTTPS）",kMuted,ui.smallFont);
     Label(dc,S(ui,46),S(ui,251),L"SSE API Key（已保存时可留空）",kMuted,ui.smallFont);
@@ -185,8 +185,7 @@ void Create(Ui& ui){
     ui.test=Control(ui.wnd,L"BUTTON",L"测试 SSE 连接",BS_OWNERDRAW,cTest);
     ui.save=Control(ui.wnd,L"BUTTON",L"保存配置",BS_OWNERDRAW,cSave);
     ui.status=Control(ui.wnd,L"STATIC",L"",SS_LEFT,cStatus);
-    ui.install=Control(ui.wnd,L"BUTTON",L"安装或修复后台服务",BS_OWNERDRAW,cInstall);
-    for(HWND child:{ui.enabled,ui.server,ui.key,ui.device,ui.peer,ui.lock,ui.trusted,ui.test,ui.save,ui.status,ui.install})
+    for(HWND child:{ui.enabled,ui.server,ui.key,ui.device,ui.peer,ui.lock,ui.trusted,ui.test,ui.save,ui.status})
         Font(child,ui.normal);
     if(ui.existing){
         ui.isEnabled=ui.saved.enabled;ui.autoLock=ui.saved.lockOnLastDisconnect;ui.trustedEventsOnly=ui.saved.trustedEventsOnly;
@@ -222,15 +221,6 @@ LRESULT CALLBACK WndProc(HWND hwnd,UINT msg,WPARAM w,LPARAM l){
         if(id==cTrusted){ui->trustedEventsOnly=!ui->trustedEventsOnly;UpdateButtons(*ui);return 0;}
         if(id==cTest){Test(*ui);return 0;}
         if(id==cSave){Save(*ui);return 0;}
-        if(id==cInstall){
-          wchar_t path[32768]{};
-          if(GetModuleFileNameW(nullptr,path,32768)){
-            auto result=ShellExecuteW(ui->wnd,L"runas",path,L"--install",nullptr,SW_SHOWNORMAL);
-            SetWindowTextW(ui->status,reinterpret_cast<INT_PTR>(result)>32?
-               L"已启动安装程序。完成后即可使用后台服务。":L"无法启动安装程序。");
-          }
-          return 0;
-        }
       }break;
       case kTestFinished:if(ui){
         std::unique_ptr<TestResult> result(reinterpret_cast<TestResult*>(l));

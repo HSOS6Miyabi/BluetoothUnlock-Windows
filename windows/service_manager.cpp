@@ -3,6 +3,7 @@
 #include <shlobj.h>
 #include <filesystem>
 #include <string>
+#include <chrono>
 
 namespace {
 constexpr wchar_t serviceName[] = L"KenvixRustDeskUnlock";
@@ -201,4 +202,107 @@ bool kb::UninstallApplication(bool keepSettings, std::wstring& message) {
     }
     message = L"已删除本程序的登录提供程序与后台服务。请重新启动 Windows 以完成卸载。";
     return true;
+}
+
+namespace {
+kb::BackgroundServiceState DecodeState(DWORD value) {
+    switch (value) {
+        case SERVICE_RUNNING: return kb::BackgroundServiceState::running;
+        case SERVICE_STOPPED: return kb::BackgroundServiceState::stopped;
+        case SERVICE_START_PENDING: return kb::BackgroundServiceState::starting;
+        case SERVICE_STOP_PENDING: return kb::BackgroundServiceState::stopping;
+        case SERVICE_PAUSED: case SERVICE_PAUSE_PENDING: case SERVICE_CONTINUE_PENDING:
+            return kb::BackgroundServiceState::paused;
+        default: return kb::BackgroundServiceState::unknown;
+    }
+}
+
+bool WaitForRunning(SC_HANDLE service, std::wstring& message) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (std::chrono::steady_clock::now() < deadline) {
+        SERVICE_STATUS_PROCESS status{};
+        DWORD bytes = 0;
+        if (!QueryServiceStatusEx(service, SC_STATUS_PROCESS_INFO,
+                reinterpret_cast<LPBYTE>(&status), sizeof(status), &bytes)) {
+            message = ErrorText(L"无法读取后台服务状态");
+            return false;
+        }
+        if (status.dwCurrentState == SERVICE_RUNNING) return true;
+        if (status.dwCurrentState == SERVICE_STOPPED) {
+            message = L"后台服务启动失败（Windows 错误 " + std::to_wstring(status.dwWin32ExitCode) + L"）。";
+            return false;
+        }
+        Sleep(250);
+    }
+    message = L"等待后台服务启动超时。";
+    return false;
+}
+} // namespace
+
+kb::BackgroundServiceInfo kb::QueryBackgroundService() {
+    BackgroundServiceInfo info{};
+    const std::wstring provider = std::wstring(L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\Credential Providers\\") + providerId;
+    HKEY key{};
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, provider.c_str(), 0, KEY_READ | KEY_WOW64_64KEY, &key) == ERROR_SUCCESS) {
+        info.credentialProviderRegistered = true;
+        RegCloseKey(key);
+    }
+    SC_HANDLE manager = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+    if (!manager) {
+        info.detail = ErrorText(L"无法查询 Windows 服务");
+        return info;
+    }
+    SC_HANDLE service = OpenServiceW(manager, serviceName, SERVICE_QUERY_STATUS);
+    if (!service) {
+        const DWORD error = GetLastError();
+        CloseServiceHandle(manager);
+        if (error == ERROR_SERVICE_DOES_NOT_EXIST) {
+            info.state = BackgroundServiceState::notInstalled;
+        } else info.detail = ErrorText(L"无法读取后台服务", error);
+        return info;
+    }
+    SERVICE_STATUS_PROCESS status{};
+    DWORD needed{};
+    if (QueryServiceStatusEx(service, SC_STATUS_PROCESS_INFO,
+            reinterpret_cast<LPBYTE>(&status), sizeof(status), &needed)) {
+        info.state = DecodeState(status.dwCurrentState);
+    } else info.detail = ErrorText(L"无法读取后台服务状态");
+    CloseServiceHandle(service);
+    CloseServiceHandle(manager);
+    return info;
+}
+
+bool kb::StartBackgroundService(std::wstring& message) {
+    SC_HANDLE manager = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+    if (!manager) { message = ErrorText(L"无法连接 Windows 服务管理器"); return false; }
+    SC_HANDLE service = OpenServiceW(manager, serviceName, SERVICE_START | SERVICE_QUERY_STATUS);
+    if (!service) {
+        message = ErrorText(L"请先安装后台服务");
+        CloseServiceHandle(manager);
+        return false;
+    }
+    bool success = StartServiceW(service, 0, nullptr) != FALSE;
+    if (!success && GetLastError() == ERROR_SERVICE_ALREADY_RUNNING) success = true;
+    if (!success) message = ErrorText(L"无法启动后台服务");
+    else success = WaitForRunning(service, message);
+    CloseServiceHandle(service);
+    CloseServiceHandle(manager);
+    if (success) message = L"后台服务已启动。";
+    return success;
+}
+
+bool kb::StopBackgroundService(std::wstring& message) {
+    SC_HANDLE manager = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+    if (!manager) { message = ErrorText(L"无法连接 Windows 服务管理器"); return false; }
+    SC_HANDLE service = OpenServiceW(manager, serviceName, SERVICE_STOP | SERVICE_QUERY_STATUS);
+    if (!service) {
+        message = ErrorText(L"请先安装后台服务");
+        CloseServiceHandle(manager);
+        return false;
+    }
+    const bool success = StopService(service, message);
+    CloseServiceHandle(service);
+    CloseServiceHandle(manager);
+    if (success) message = L"后台服务已停止。";
+    return success;
 }

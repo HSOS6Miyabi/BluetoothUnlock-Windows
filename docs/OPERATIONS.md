@@ -10,28 +10,25 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-将 `KenvixBluetoothUnlock.exe` 与 `KenvixBleCredentialProvider.dll` 放在同一目录。以管理员身份在该目录执行：
+将 `KenvixBluetoothUnlock.exe` 与 `KenvixBleCredentialProvider.dll` 放在同一目录。双击打开 EXE，在“服务管理”页面点击“安装服务与登录组件”。根据 Windows 提示授予管理员权限。
 
-```powershell
-.\KenvixBluetoothUnlock.exe --install
-```
+服务管理页面包含实时运行状态、登录组件注册状态、重新安装／修复、启动、停止、卸载以及刷新状态。卸载前可选择是否保留已保存的设置。管理操作会在后台线程运行，界面显示完成结果。
 
 安装程序会将二进制文件复制到 `C:\Program Files\Kenvix\BluetoothUnlock`，安装 `KenvixRustDeskUnlock` 后台服务，并注册原生 Windows 凭据提供程序。
 
-打开安装目录中的 `KenvixBluetoothUnlock.exe`。如果当前用户没有管理员权限，设置程序会请求提升权限。统一设置窗口有“蓝牙解锁”和“RustDesk API”两个页面。蓝牙页面可选择手机验证、手环检测或仅 RustDesk，并可设置 RSSI 阈值；随后填写 Windows 登录账户和密码。密码只在本机保存，经 DPAPI 加密。界面使用 Windows 应用主题设置，自动切换浅色与深色模式，并按显示器 DPI 缩放字体和控件。
+打开安装目录中的 `KenvixBluetoothUnlock.exe`。如果当前用户没有管理员权限，设置程序会请求提升权限。统一设置窗口有“蓝牙解锁”“RustDesk API”和“服务管理”三个页面。蓝牙页面可选择手机验证、手环检测或仅 RustDesk，并可设置 RSSI 阈值；随后填写 Windows 登录账户和密码。密码只在本机保存，经 DPAPI 加密。界面使用 Windows 应用主题设置，自动切换浅色与深色模式，并按显示器 DPI 缩放字体和控件。
 
 建议先在测试机器或虚拟机中检查 Credential Provider 注册和登录界面。真实蓝牙功能还需要一台物理 Windows 电脑。
 
 ## Android 编译与使用
 
-使用最新版稳定版 Android Studio，安装 JDK 17 和 Android SDK API 37。打开 `android/` 文件夹同步 Gradle 项目。也可以在已安装 Gradle 9.6.0 的环境中执行：
+使用 Android Studio，安装 JDK 17 和 Android SDK API 37。打开独立的 [BluetoothUnlock-Android](https://github.com/HSOS6Miyabi/BluetoothUnlock-Android) 仓库根目录同步 Gradle 项目。也可以在已安装 Gradle 9.6.0 的环境中执行：
 
 ```bash
-cd android
 gradle :app:testDebugUnitTest :app:assembleDebug
 ```
 
-APK 生成位置：`android/app/build/outputs/apk/debug/app-debug.apk`。安装后允许蓝牙连接与蓝牙广播权限。如果使用手动确认模式，还需要允许通知权限，并在 Android 系统中配置生物识别或锁屏密码。
+APK 生成位置：`app/build/outputs/apk/debug/app-debug.apk`。安装后允许蓝牙连接与蓝牙广播权限。如果使用手动确认模式，还需要允许通知权限，并在 Android 系统中配置生物识别或锁屏密码。
 
 主页面可选择自动响应或手动确认，可启用“开机自动启动”，并可以复制手机公钥指纹。后台服务运行时显示常驻通知。要停止广播，点击应用中的“停止蓝牙认证”或通知中的“停止”。
 
@@ -61,13 +58,13 @@ RSSI 数值越接近 `0 dBm`，表示接收信号通常越强。例如，`-55 dB
 
 ## 卸载与恢复
 
-在管理员 PowerShell 中运行：
+打开设置窗口中的“服务管理”，点击“卸载程序”。确认后会移除后台服务和原生登录组件。勾选“卸载时保留设置”可保留当前的身份验证配置。也可以在管理员 PowerShell 中运行：
 
 ```powershell
 & 'C:\Program Files\Kenvix\BluetoothUnlock\KenvixBluetoothUnlock.exe' --uninstall
 ```
 
-程序会停止并删除后台服务，移除 Credential Provider 和 COM 注册信息，删除安装文件及本程序配置。系统正在使用的文件会安排在重新启动后删除。卸载不修改 Windows 原有登录方式。
+程序会停止并删除后台服务，移除 Credential Provider 和 COM 注册信息，删除安装文件及本程序配置。需要保留配置时，可以使用 `--uninstall-keep-settings`。系统正在使用的文件会安排在重新启动后删除。卸载不修改 Windows 原有登录方式。
 
 如果无法进入通常的桌面，可从安全模式或 Windows 恢复环境执行注册表操作。仅删除本项目的注册表项：
 

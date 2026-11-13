@@ -9,6 +9,7 @@ Windows 10/11 原生锁屏的蓝牙与 RustDesk API 解锁程序。Windows Crede
 - 设置 RSSI 最低信号强度；界面自动跟随 Windows 应用浅色或深色模式，支持逐显示器 DPI 缩放与动态调整。
 - 可选 RustDesk API SSE 自动解锁和连接结束后锁定；支持目标设备 ID、来源设备 ID 限制与多连接状态管理。
 - RustDesk API Key 和 Windows 登录凭据使用 Windows DPAPI 加密保存。
+- “服务管理”页面可查看后台服务和登录组件状态，完成安装、修复、启动、停止及卸载。卸载时可选择保留设置。
 
 ## 构建及测试
 
@@ -20,13 +21,11 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-构建输出仅包含一个可执行文件 `KenvixBluetoothUnlock.exe` 和 Windows 原生登录必需的 `KenvixBleCredentialProvider.dll`。将二者放在同一目录，在管理员 PowerShell 中执行：
+构建输出仅包含一个可执行文件 `KenvixBluetoothUnlock.exe` 和 Windows 原生登录必需的 `KenvixBleCredentialProvider.dll`。将二者放在同一目录，直接运行 `KenvixBluetoothUnlock.exe` 打开设置窗口，允许 Windows 请求管理员权限。在 **服务管理** 页面点击“安装服务与登录组件”，程序将安装后台服务并注册 Windows 原生登录组件。
 
-```powershell
-.\KenvixBluetoothUnlock.exe --install
-```
+统一窗口包含 **蓝牙解锁**、**RustDesk API** 和 **服务管理** 三个页面。服务管理页面会显示运行状态，并提供启动、停止、重新安装、修复及卸载操作。卸载时可以保留本机配置以供重新安装使用，无需运行命令行。
 
-安装后直接运行 `KenvixBluetoothUnlock.exe` 打开统一设置窗口。在“蓝牙解锁”和“RustDesk API”页面中分别配置身份验证。卸载使用 `--uninstall`。也可以使用 `windows/install.ps1` 和 `windows/uninstall.ps1`，这两个脚本会调用同一个 EXE。
+也可以使用 `--install`、`--uninstall` 命令，或调用 `windows/install.ps1`、`windows/uninstall.ps1`。
 
 GitHub Actions 将编译 x64 版本、运行 C++ 自动化测试，并在默认分支构建成功且对应版本尚未发布时创建 Release。每个版本的压缩包包含一个 EXE、系统登录扩展 DLL、安装脚本及文档。安装 Credential Provider 前请确认能够使用密码正常登录 Windows，首次安装建议在测试电脑执行。
 
@@ -34,20 +33,25 @@ GitHub Actions 将编译 x64 版本、运行 C++ 自动化测试，并在默认�
 
 | 参数 | 功能 |
 | --- | --- |
-| 无参数或 `--settings` | 启动带有蓝牙解锁及 RustDesk API 页面的一体化设置界面 |
+| 无参数或 `--settings` | 打开带有蓝牙、RustDesk API 和服务管理页面的统一设置窗口 |
 | `--install` | 安装 EXE、凭据提供程序 DLL，注册系统登录扩展及 Windows 后台服务 |
-| `--uninstall` | 停止并删除后台服务，移除系统登录扩展和保存的配置 |
+| `--uninstall` | 停止并删除后台服务、注销系统登录组件、删除本程序配置 |
+| `--uninstall-keep-settings` | 卸载程序和服务，保留配置以便重新安装 |
 | `--service` | 由 Windows 服务管理器启动 SSE 后台服务 |
 | `--lock` | 在当前交互式用户会话请求锁定 Windows |
 | `--self-test` | 执行无需安装系统服务的启动自检 |
 
-Windows 服务安装到 `KenvixRustDeskUnlock`，进程使用同一 EXE 的 `--service` 参数运行。设置窗口在需要写入系统级配置时自动请求管理员权限；服务启动和锁定操作不请求交互式提升权限。
+Windows 服务名为 `KenvixRustDeskUnlock`，进程使用同一 EXE 的 `--service` 参数运行。设置窗口在需要写入系统级配置时自动请求管理员权限；服务启动和锁定操作不请求交互式提升权限。
 
 ## RustDesk API
 
 可设置 RustDesk API 服务器 HTTPS 地址、个人 `events.read` API Key、目标电脑设备 ID、允许的连接方 ID 和自动锁定选项。详情见 [RustDesk 接入说明](docs/RUSTDESK_API_UNLOCK.md)。
 
 **安全提示：** RustDesk API 普通 `connection.authenticated` 事件来自客户端审计报告。将其用于自动解锁时，需评估服务器对审计请求的身份验证措施。对于无法确认可信来源的事件，建议同时启用本机身份验证要求，或选择可信事件模式。
+
+## Windows 和 Android 认证兼容性
+
+两个仓库使用相同的一组 P-256 签名测试数据。Windows 在原生 CNG 中验证 Android 格式的公钥和 DER 签名，Android 在 JVM 中验证相同的签名、挑战和公钥指纹。详情见 [测试说明](docs/TESTING.md)。
 
 ## Android 客户端
 

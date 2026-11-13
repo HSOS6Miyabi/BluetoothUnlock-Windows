@@ -1,4 +1,7 @@
 #include "protocol.h"
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 #include <iostream>
 using namespace kenvix;
