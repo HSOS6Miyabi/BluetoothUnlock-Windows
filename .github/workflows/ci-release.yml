@@ -1,0 +1,92 @@
+name: Windows CI and Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build and test Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Visual Studio CMake project
+        shell: pwsh
+        run: cmake -S . -B build -A x64 -DBUILD_TESTING=ON
+      - name: Build applications and Credential Provider
+        shell: pwsh
+        run: cmake --build build --config Release --parallel 2
+      - name: Run native C++ tests
+        shell: pwsh
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Create distribution package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content VERSION -Raw).Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'VERSION must be a semantic version' }
+          $stage = Join-Path $env:RUNNER_TEMP 'stage'
+          New-Item -Type Directory -Path (Join-Path $stage 'windows') -Force | Out-Null
+          New-Item -Type Directory -Path (Join-Path $stage 'build\windows\Release') -Force | Out-Null
+          New-Item -Type Directory -Path (Join-Path $stage 'docs') -Force | Out-Null
+          foreach ($name in @('KenvixBleCredentialProvider.dll','KenvixBleSettings.exe','KenvixRustDeskSettings.exe','KenvixRustDeskService.exe')) {
+            $src = Join-Path 'build\windows\Release' $name
+            if (-not (Test-Path $src)) { throw "Missing required artifact: $src" }
+            Copy-Item $src (Join-Path $stage 'build\windows\Release')
+          }
+          Copy-Item windows/install.ps1,windows/uninstall.ps1 (Join-Path $stage 'windows')
+          Copy-Item docs/*.md (Join-Path $stage 'docs')
+          Copy-Item README.md,VERSION $stage
+          New-Item -Type Directory -Path dist -Force | Out-Null
+          $zip = "dist/KenvixBluetoothUnlock-Windows-x64-v$version.zip"
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
+          Get-FileHash -Algorithm SHA256 $zip | ForEach-Object { "{0}  {1}" -f $_.Hash.ToLowerInvariant(), (Split-Path $zip -Leaf) } | Set-Content "dist/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-release-files
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-x64-release-files
+          path: release-files
+      - name: Publish tagged release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\r\n' < VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          tag="v$version"
+          git fetch --tags --force
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "Version $tag is already tagged. Existing releases remain unchanged."
+            exit 0
+          fi
+          git tag -a "$tag" -m "Kenvix Bluetooth Unlock for Windows $tag"
+          git push origin "refs/tags/$tag"
+          gh release create "$tag" release-files/* --verify-tag --title "Kenvix Bluetooth Unlock for Windows $tag" --generate-notes --latest

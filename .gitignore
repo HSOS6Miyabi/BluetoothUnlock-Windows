@@ -1,0 +1,10 @@
+build/
+cmake-build-*/
+.gradle/
+**/build/
+.idea/
+*.iml
+*.keystore
+*.jks
+local.properties
+.DS_Store
