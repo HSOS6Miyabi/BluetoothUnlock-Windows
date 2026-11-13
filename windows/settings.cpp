@@ -3,6 +3,7 @@
 #include "storage.h"
 #include "remote_settings.h"
 #include "service_manager.h"
+#include "service_settings.h"
 #include "ui_common.h"
 #include <windows.h>
 #include <shellapi.h>
@@ -27,18 +28,18 @@ COLORREF kMuted=RGB(92,108,130);
 COLORREF kAccent=RGB(39,105,213);
 COLORREF kAccentText=RGB(255,255,255),kBorder=RGB(215,224,237),kSubtle=RGB(233,241,253);
 constexpr int cHigh=110,cLow=111,cDevices=112,cReadKey=113,cSlider=114,cUser=115,
-              cDomain=116,cPassword=117,cSave=118,cVerified=119,cStatus=120,cSignal=121,cFingerprint=122,cRemote=123,cOnlyRemote=124,cBleTab=125;
+              cDomain=116,cPassword=117,cSave=118,cVerified=119,cStatus=120,cSignal=121,cFingerprint=122,cRemote=123,cOnlyRemote=124,cBleTab=125,cServiceTab=126;
 constexpr UINT msgKey=WM_APP+2,msgSave=WM_APP+3;
 struct KeyResult{uint64_t address{};bool ok{};kenvix::PublicKey key{};};
 struct SaveResult{bool ok{};std::wstring message;kb::Configuration saved;};
 struct Ui {
   HWND host{};
-  HWND high{},low{},remoteOnly{},devices{},readKey{},slider{},username{},domain{},password{},save{},verified{},status{},signal{},fingerprint{},remote{},bleTab{},remotePage{};
+  HWND high{},low{},remoteOnly{},devices{},readKey{},slider{},username{},domain{},password{},save{},verified{},status{},signal{},fingerprint{},remote{},bleTab{},serviceTab{},remotePage{},servicePage{};
   HFONT font{},heading{},smallFont{};
   HBRUSH editBrush{},panelBrush{};
   kb::ui::Palette palette{};
   UINT dpi{96};
-  bool remoteActive{};
+  int activePage{};
   kb::BleScanner scanner;
   kb::Configuration config{};
   bool hadConfig{};
@@ -60,7 +61,7 @@ void Appearance(Ui& ui){
   HFONT heading=kb::ui::MakeFont(ui.dpi,31,FW_SEMIBOLD);
   HFONT smallText=kb::ui::MakeFont(ui.dpi,16);
   if(ui.font){
-    for(HWND item:{ui.bleTab,ui.remote,ui.high,ui.low,ui.remoteOnly,ui.devices,
+    for(HWND item:{ui.bleTab,ui.remote,ui.serviceTab,ui.high,ui.low,ui.remoteOnly,ui.devices,
         ui.readKey,ui.slider,ui.username,ui.domain,ui.password,ui.save,ui.verified,
         ui.status,ui.signal,ui.fingerprint})
       if(item)SendMessageW(item,WM_SETFONT,reinterpret_cast<WPARAM>(normal),FALSE);
@@ -73,6 +74,7 @@ void Appearance(Ui& ui){
   ui.editBrush=CreateSolidBrush(kEdit);ui.panelBrush=CreateSolidBrush(kPanel);
   if(ui.host){kb::ui::Titlebar(ui.host,ui.palette.dark);InvalidateRect(ui.host,nullptr,TRUE);}
   if(ui.remotePage)SendMessageW(ui.remotePage,kb::kRemotePageAppearance,ui.dpi,0);
+  if(ui.servicePage)SendMessageW(ui.servicePage,kb::kServicePageAppearance,ui.dpi,0);
 }
 std::wstring GetText(HWND child){
   const int n=GetWindowTextLengthW(child);
@@ -116,16 +118,18 @@ void RefreshLabels(Ui& ui){
   std::wstring label=std::format(L"最低信号强度：{} dBm",n);
   SetWindowTextW(ui.signal,label.c_str());
 }
-void SetPage(Ui& ui,bool rustDesk){
-  ui.remoteActive=rustDesk;
+void SetPage(Ui& ui,int page){
+  ui.activePage=page;
   for(HWND child:{ui.high,ui.low,ui.remoteOnly,ui.devices,ui.readKey,ui.slider,
       ui.username,ui.domain,ui.password,ui.save,ui.verified,ui.status,ui.signal,ui.fingerprint})
-    ShowWindow(child,rustDesk?SW_HIDE:SW_SHOW);
-  if(!rustDesk)UpdateModeControls(ui);
-  if(ui.remotePage)ShowWindow(ui.remotePage,rustDesk?SW_SHOW:SW_HIDE);
-  InvalidateRect(ui.bleTab,nullptr,TRUE);InvalidateRect(ui.remote,nullptr,TRUE);
+    ShowWindow(child,page==0?SW_SHOW:SW_HIDE);
+  if(page==0)UpdateModeControls(ui);
+  if(ui.remotePage)ShowWindow(ui.remotePage,page==1?SW_SHOW:SW_HIDE);
+  if(ui.servicePage)ShowWindow(ui.servicePage,page==2?SW_SHOW:SW_HIDE);
+  for(HWND tab:{ui.bleTab,ui.remote,ui.serviceTab})InvalidateRect(tab,nullptr,TRUE);
   InvalidateRect(ui.host,nullptr,TRUE);
 }
+
 void Layout(Ui& ui){
   RECT physical{};GetClientRect(ui.host,&physical);
   const int w=MulDiv(physical.right,96,ui.dpi),h=MulDiv(physical.bottom,96,ui.dpi);
@@ -136,7 +140,9 @@ void Layout(Ui& ui){
   };
   place(ui.bleTab,26,119,178,47);
   place(ui.remote,216,119,189,47);
+  place(ui.serviceTab,417,119,182,47);
   place(ui.remotePage,0,182,w,std::max(550,h-182));
+  place(ui.servicePage,0,182,w,std::max(550,h-182));
   const int left=42;
   const int segment=std::max(119,(col-65-22)/3);
   place(ui.high,left,212,segment,52);
@@ -258,6 +264,7 @@ void CreateControls(Ui& ui){
   Appearance(ui);
   ui.bleTab=Child(ui.host,L"BUTTON",L"蓝牙解锁",BS_OWNERDRAW,cBleTab);
   ui.remote=Child(ui.host,L"BUTTON",L"RustDesk API",BS_OWNERDRAW,cRemote);
+  ui.serviceTab=Child(ui.host,L"BUTTON",L"服务管理",BS_OWNERDRAW,cServiceTab);
   ui.high=Child(ui.host,L"BUTTON",L"手机验证",BS_OWNERDRAW,cHigh);
   ui.low=Child(ui.host,L"BUTTON",L"手环检测",BS_OWNERDRAW,cLow);
   ui.remoteOnly=Child(ui.host,L"BUTTON",L"仅 RustDesk",BS_OWNERDRAW,cOnlyRemote);
@@ -272,7 +279,7 @@ void CreateControls(Ui& ui){
   ui.status=Child(ui.host,L"STATIC",L"选择设备并配置 Windows 登录账户。",SS_LEFT,cStatus);
   ui.signal=Child(ui.host,L"STATIC",L"",SS_LEFT,cSignal);
   ui.fingerprint=Child(ui.host,L"STATIC",L"公钥指纹：尚未读取",SS_LEFT,cFingerprint);
-  for(HWND c:{ui.bleTab,ui.remote,ui.high,ui.low,ui.remoteOnly,ui.devices,ui.readKey,ui.slider,ui.username,ui.domain,
+  for(HWND c:{ui.bleTab,ui.remote,ui.serviceTab,ui.high,ui.low,ui.remoteOnly,ui.devices,ui.readKey,ui.slider,ui.username,ui.domain,
               ui.password,ui.save,ui.verified,ui.status,ui.signal,ui.fingerprint})Font(c,ui.font);
   SendMessageW(ui.slider,TBM_SETRANGE,TRUE,MAKELPARAM(0,65));
   SendMessageW(ui.slider,TBM_SETPOS,TRUE,30);
@@ -291,8 +298,9 @@ void CreateControls(Ui& ui){
   }
   UpdateModeControls(ui);
   ui.remotePage=kb::CreateRemoteSettingsPage(ui.host);
+  ui.servicePage=kb::CreateServiceSettingsPage(ui.host);
   RefreshLabels(ui);Layout(ui);
-  SetPage(ui,false);
+  SetPage(ui,0);
 }
 void Paint(HWND hwnd,Ui& ui){
   PAINTSTRUCT ps{};HDC dc=BeginPaint(hwnd,&ps);
@@ -305,7 +313,7 @@ void Paint(HWND hwnd,Ui& ui){
   HPEN divider=CreatePen(PS_SOLID,1,kBorder);auto old=SelectObject(dc,divider);
   MoveToEx(dc,S(ui,25),S(ui,176),nullptr);LineTo(dc,S(ui,w-25),S(ui,176));
   SelectObject(dc,old);DeleteObject(divider);
-  if(!ui.remoteActive){
+  if(ui.activePage==0){
     const int col=std::max(415,static_cast<int>(w*0.43)),rightX=col+34;
     kb::ui::Rounded(dc,{S(ui,24),S(ui,193),S(ui,col+2),S(ui,h-19)},kPanel,S(ui,21));
     kb::ui::Rounded(dc,{S(ui,col+18),S(ui,193),S(ui,w-24),S(ui,h-19)},kPanel,S(ui,21));
@@ -320,9 +328,10 @@ void Paint(HWND hwnd,Ui& ui){
   EndPaint(hwnd,&ps);
 }
 void DrawButton(DRAWITEMSTRUCT* info,Ui& ui){
-  const bool tab=info->CtlID==cBleTab||info->CtlID==cRemote;
-  const bool selected=(info->CtlID==cBleTab&&!ui.remoteActive)||
-      (info->CtlID==cRemote&&ui.remoteActive)||
+  const bool tab=info->CtlID==cBleTab||info->CtlID==cRemote||info->CtlID==cServiceTab;
+  const bool selected=(info->CtlID==cBleTab&&ui.activePage==0)||
+      (info->CtlID==cRemote&&ui.activePage==1)||
+      (info->CtlID==cServiceTab&&ui.activePage==2)||
       (info->CtlID==cHigh&&ui.selectedMode==kb::Mode::high)||
       (info->CtlID==cLow&&ui.selectedMode==kb::Mode::low)||
       (info->CtlID==cOnlyRemote&&ui.selectedMode==kb::Mode::remote);
@@ -385,7 +394,9 @@ LRESULT CALLBACK WndProc(HWND hwnd,UINT msg,WPARAM w,LPARAM l){
           }
         }return 0;
       }
-      if(id==cRemote||id==cBleTab){SetPage(*ui,id==cRemote);return 0;}
+      if(id==cRemote||id==cBleTab||id==cServiceTab){
+        SetPage(*ui,id==cRemote?1:id==cServiceTab?2:0);return 0;
+      }
       if(id==cReadKey){ReadKey(*ui);return 0;}
       if(id==cSave){Save(*ui);return 0;}
     }break;
@@ -465,12 +476,14 @@ int APIENTRY wWinMain(HINSTANCE inst,HINSTANCE,LPWSTR,int show){
     if(arg==L"--lock")return LockWorkStation()?0:1;
     if(arg==L"--self-test"){
       const auto colors=kb::ui::Colors();
-      return (kb::ui::Scale(144,20)==30&&colors.text!=colors.background)?0:1;
+      const auto state=kb::QueryBackgroundService();
+      return (kb::ui::Scale(144,20)==30&&colors.text!=colors.background&&
+          state.state!=kb::BackgroundServiceState::unknown)?0:1;
     }
-    if(arg==L"--install"||arg==L"--uninstall"){
+    if(arg==L"--install"||arg==L"--uninstall"||arg==L"--uninstall-keep-settings"){
       if(!Elevated())return RelaunchElevated(arg.c_str(),true);
       std::wstring result;
-      const bool ok=arg==L"--install"?kb::InstallApplication(result):kb::UninstallApplication(false,result);
+      const bool ok=arg==L"--install"?kb::InstallApplication(result):kb::UninstallApplication(arg==L"--uninstall-keep-settings",result);
       MessageBoxW(nullptr,result.c_str(),L"Kenvix Bluetooth Unlock",
           MB_OK|(ok?MB_ICONINFORMATION:MB_ICONERROR));
       return ok?0:1;

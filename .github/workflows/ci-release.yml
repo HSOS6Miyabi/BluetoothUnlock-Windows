@@ -58,9 +58,30 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  interop:
+    name: Verify Android protocol interoperability
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: HSOS6Miyabi/BluetoothUnlock-Android
+          ref: main
+          path: android-source
+      - name: Compare Android and Windows authentication fixtures
+        shell: bash
+        run: cmp tests/interop_vectors.properties android-source/app/src/test/resources/interop_vectors.properties
+      - name: Run portable C++ and OpenSSL tests
+        shell: bash
+        run: |
+          cmake -S . -B build-linux -DBUILD_TESTING=ON
+          cmake --build build-linux --parallel 2
+          ctest --test-dir build-linux --output-on-failure
+
   release:
     name: Publish GitHub Release
-    needs: build
+    needs: [build, interop]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
