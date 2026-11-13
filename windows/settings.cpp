@@ -264,7 +264,7 @@ void Paint(HWND hwnd,Ui& ui){
   Text(dc,30,251,L"附近的蓝牙设备",kText,ui.font);
   Text(dc,col+32,153,L"解锁条件",kText,ui.font);
   Text(dc,col+32,301,L"Windows 用户名",kMuted,ui.smallFont);
-  Text(dc,col+32+(std::max(350,r.right-col-66)-16)/2+16,301,L"计算机名或域名",kMuted,ui.smallFont);
+  Text(dc,col+32+(std::max<int>(350,r.right-col-66)-16)/2+16,301,L"计算机名或域名",kMuted,ui.smallFont);
   Text(dc,col+32,394,L"Windows 账户密码（已有配置时可以留空）",kMuted,ui.smallFont);
   Text(dc,col+32,480,L"保存后，系统原有登录选项将继续保留。",kMuted,ui.smallFont);
   EndPaint(hwnd,&ps);
