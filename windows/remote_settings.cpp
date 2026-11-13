@@ -1,8 +1,12 @@
 #include "remote_http.h"
 #include "remote_storage.h"
+#include "remote_settings.h"
+#include "service_manager.h"
+#include "ui_common.h"
 #include "storage.h"
 #include <windows.h>
 #include <commctrl.h>
+#include <shellapi.h>
 #include <dwmapi.h>
 #include <algorithm>
 #include <memory>
@@ -12,19 +16,41 @@
 #pragma comment(lib,"dwmapi.lib")
 #pragma comment(lib,"comctl32.lib")
 namespace {
-constexpr COLORREF kBg=RGB(13,20,33),kCard=RGB(24,36,54),kInput=RGB(34,47,67);
-constexpr COLORREF kText=RGB(235,243,255),kMuted=RGB(156,176,201),kBlue=RGB(89,155,245);
-constexpr int cEnabled=201,cServer=202,cKey=203,cDevice=204,cPeer=205,cLock=206,cTest=207,cSave=208,cStatus=209,cTrusted=210;
+COLORREF kBg=RGB(247,249,252),kCard=RGB(255,255,255),kInput=RGB(243,247,252);
+COLORREF kText=RGB(30,42,60),kMuted=RGB(92,108,130),kBlue=RGB(39,105,213);
+COLORREF kAccentText=RGB(255,255,255),kBorder=RGB(215,224,237),kSubtle=RGB(233,241,253);
+constexpr int cEnabled=201,cServer=202,cKey=203,cDevice=204,cPeer=205,cLock=206,cTest=207,cSave=208,cStatus=209,cTrusted=210,cInstall=211;
 constexpr UINT kTestFinished=WM_APP+50;
 struct TestResult{bool ok{};std::wstring message;};
 struct Ui{
-    HWND wnd{},enabled{},server{},key{},device{},peer{},lock{},trusted{},test{},save{},status{};
+    HWND wnd{},enabled{},server{},key{},device{},peer{},lock{},trusted{},test{},save{},status{},install{};
     HFONT normal{},bold{},smallFont{},heading{};
     HBRUSH cardBrush{},inputBrush{};
+    kb::ui::Palette palette{};
+    UINT dpi{96};
     kb::RemoteConfiguration saved{};
     bool existing{},isEnabled{},autoLock{true},trustedEventsOnly{},busy{};
     std::jthread testJob{};
 };
+int S(const Ui& ui,int n){return kb::ui::Scale(ui.dpi,n);}
+void Appearance(Ui& ui){
+    ui.palette=kb::ui::Colors();
+    kBg=ui.palette.background;kCard=ui.palette.panel;kInput=ui.palette.field;
+    kText=ui.palette.text;kMuted=ui.palette.muted;kBlue=ui.palette.accent;
+    kAccentText=ui.palette.accentText;kBorder=ui.palette.border;kSubtle=ui.palette.subtle;
+    auto normal=kb::ui::MakeFont(ui.dpi,18);
+    auto bold=kb::ui::MakeFont(ui.dpi,18,FW_SEMIBOLD);
+    auto small=kb::ui::MakeFont(ui.dpi,16);
+    auto heading=kb::ui::MakeFont(ui.dpi,25,FW_SEMIBOLD);
+    if(ui.normal){for(HWND item:{ui.enabled,ui.server,ui.key,ui.device,ui.peer,ui.lock,ui.trusted,ui.test,ui.save,ui.status,ui.install})
+        if(item)SendMessageW(item,WM_SETFONT,reinterpret_cast<WPARAM>(normal),FALSE);}
+    for(auto f:{ui.normal,ui.bold,ui.smallFont,ui.heading})if(f)DeleteObject(f);
+    ui.normal=normal;ui.bold=bold;ui.smallFont=small;ui.heading=heading;
+    if(ui.cardBrush)DeleteObject(ui.cardBrush);
+    if(ui.inputBrush)DeleteObject(ui.inputBrush);
+    ui.cardBrush=CreateSolidBrush(kCard);ui.inputBrush=CreateSolidBrush(kInput);
+    if(ui.wnd){InvalidateRect(ui.wnd,nullptr,TRUE);}
+}
 std::wstring Read(HWND h){
     int count=GetWindowTextLengthW(h);if(count<=0)return {};
     std::wstring text(static_cast<size_t>(count)+1,L'\0');
@@ -55,46 +81,49 @@ void UpdateButtons(Ui& ui){
 }
 void Layout(Ui& ui){
     RECT r{};GetClientRect(ui.wnd,&r);
-    int w=r.right,usable=w-110;
-    Move(ui.enabled,54,145,usable,48);
-    Move(ui.server,54,269,usable,42);
-    Move(ui.key,54,353,usable,42);
-    Move(ui.device,54,437,(usable-20)/2,42);
-    Move(ui.peer,54+(usable-20)/2+20,437,(usable-20)/2,42);
-    Move(ui.lock,54,511,usable,42);
-    Move(ui.trusted,54,566,usable,42);
-    Move(ui.test,54,632,190,48);
-    Move(ui.save,w-242,632,188,48);
-    Move(ui.status,260,632,w-520,60);
+    const int w=MulDiv(r.right,96,ui.dpi),h=MulDiv(r.bottom,96,ui.dpi);
+    const int left=46, usable=std::max(390,w-92);
+    auto place=[&](HWND child,int x,int y,int width,int height){
+        Move(child,S(ui,x),S(ui,y),S(ui,width),S(ui,height));};
+    place(ui.install,std::max(45,w-300),21,247,43);
+    place(ui.enabled,left,100,usable,45);
+    place(ui.server,left,224,usable,46);
+    place(ui.key,left,302,usable,46);
+    place(ui.device,left,384,(usable-20)/2,46);
+    place(ui.peer,left+(usable-20)/2+20,384,(usable-20)/2,46);
+    place(ui.lock,left,455,usable,42);
+    place(ui.trusted,left,507,usable,42);
+    place(ui.test,left,std::max(565,h-77),182,48);
+    place(ui.save,w-228,std::max(565,h-77),182,48);
+    place(ui.status,left+202,std::max(566,h-76),std::max(160,usable-408),50);
 }
 void Paint(Ui& ui){
     PAINTSTRUCT ps{};auto dc=BeginPaint(ui.wnd,&ps);
     RECT r{};GetClientRect(ui.wnd,&r);
-    HBRUSH background=CreateSolidBrush(kBg);FillRect(dc,&r,background);DeleteObject(background);
-    Rounded(dc,{26,125,r.right-26,r.bottom-26},kCard,22);
-    Label(dc,54,31,L"Kenvix",kBlue,ui.heading);
-    Label(dc,182,37,L"RustDesk API",kText,ui.heading);
-    Label(dc,54,91,L"RustDesk 连接事件可触发 Windows 自动解锁和连接结束后的锁定。",kMuted,ui.normal);
-    Label(dc,54,202,L"普通审计事件由 RustDesk 客户端上报，建议限制可信服务器的访问。",kMuted,ui.smallFont);
-    Label(dc,54,231,L"服务器地址（HTTPS）",kMuted,ui.smallFont);
-    Label(dc,54,319,L"SSE API Key（已保存时留空即可）",kMuted,ui.smallFont);
-    Label(dc,54,405,L"本设备 RustDesk ID",kMuted,ui.smallFont);
-    int usable=r.right-110;
-    Label(dc,54+(usable-20)/2+20,405,L"允许的连接方设备 ID（可选）",kMuted,ui.smallFont);
-    Label(dc,54,r.bottom-54,L"API Key 可从账户 → 消息推送 → SSE 实时订阅中生成。",kMuted,ui.smallFont);
+    HBRUSH bg=CreateSolidBrush(kBg);FillRect(dc,&r,bg);DeleteObject(bg);
+    int w=MulDiv(r.right,96,ui.dpi),h=MulDiv(r.bottom,96,ui.dpi);
+    auto rect=[&](int x1,int y1,int x2,int y2){return RECT{S(ui,x1),S(ui,y1),S(ui,x2),S(ui,y2)};};
+    kb::ui::Rounded(dc,rect(18,4,w-18,h-12),kCard,S(ui,20));
+    Label(dc,S(ui,46),S(ui,22),L"RustDesk API",kText,ui.heading);
+    Label(dc,S(ui,46),S(ui,66),L"通过服务器事件管理远程解锁和连接结束后的锁定",kMuted,ui.normal);
+    Label(dc,S(ui,46),S(ui,164),L"请使用可信服务器，并限制连接方设备 ID。",kMuted,ui.smallFont);
+    Label(dc,S(ui,46),S(ui,195),L"RustDesk API 服务器地址（HTTPS）",kMuted,ui.smallFont);
+    Label(dc,S(ui,46),S(ui,275),L"SSE API Key（已保存时可留空）",kMuted,ui.smallFont);
+    Label(dc,S(ui,46),S(ui,353),L"本机 RustDesk ID",kMuted,ui.smallFont);
+    Label(dc,S(ui,46+(std::max(390,w-92)-20)/2+20),S(ui,353),L"允许的连接方 ID（可选）",kMuted,ui.smallFont);
     EndPaint(ui.wnd,&ps);
 }
 void Draw(DRAWITEMSTRUCT* d,Ui& ui){
     const bool primary=d->CtlID==cSave;
     const bool toggle=d->CtlID==cEnabled||d->CtlID==cLock||d->CtlID==cTrusted;
     const bool disabled=(d->itemState&ODS_DISABLED)!=0;
-    COLORREF bg=disabled?kInput:primary?kBlue:toggle?kInput:RGB(47,64,86);
-    Rounded(d->hDC,d->rcItem,bg,16);
-    SetTextColor(d->hDC,primary?RGB(9,20,32):kText);
+    const COLORREF bg=disabled?kInput:primary?kBlue:toggle?kSubtle:kInput;
+    kb::ui::Rounded(d->hDC,d->rcItem,bg,S(ui,14));
+    SetTextColor(d->hDC,primary?kAccentText:kText);
     SetBkMode(d->hDC,TRANSPARENT);SelectObject(d->hDC,ui.normal);
     wchar_t title[180]{};GetWindowTextW(d->hwndItem,title,180);
     RECT rect=d->rcItem;
-    if(toggle)rect.left+=18;
+    if(toggle)rect.left+=S(ui,18);
     DrawTextW(d->hDC,title,-1,&rect,DT_SINGLELINE|DT_VCENTER|(toggle?DT_LEFT:DT_CENTER));
     if(d->itemState&ODS_FOCUS)DrawFocusRect(d->hDC,&d->rcItem);
 }
@@ -145,15 +174,7 @@ void Save(Ui& ui){
     SetWindowTextW(ui.status,L"设置已保存，后台服务将自动更新订阅。 ");
 }
 void Create(Ui& ui){
-    ui.normal=CreateFontW(-17,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
-        CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
-    ui.bold=CreateFontW(-17,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
-        CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
-    ui.smallFont=CreateFontW(-15,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
-        CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
-    ui.heading=CreateFontW(-29,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
-        CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
-    ui.cardBrush=CreateSolidBrush(kCard);ui.inputBrush=CreateSolidBrush(kInput);
+    Appearance(ui);
     ui.enabled=Control(ui.wnd,L"BUTTON",L"",BS_OWNERDRAW,cEnabled);
     ui.server=Control(ui.wnd,L"EDIT",L"",ES_AUTOHSCROLL|WS_BORDER|WS_TABSTOP,cServer);
     ui.key=Control(ui.wnd,L"EDIT",L"",ES_PASSWORD|ES_AUTOHSCROLL|WS_BORDER|WS_TABSTOP,cKey);
@@ -164,7 +185,8 @@ void Create(Ui& ui){
     ui.test=Control(ui.wnd,L"BUTTON",L"测试 SSE 连接",BS_OWNERDRAW,cTest);
     ui.save=Control(ui.wnd,L"BUTTON",L"保存配置",BS_OWNERDRAW,cSave);
     ui.status=Control(ui.wnd,L"STATIC",L"",SS_LEFT,cStatus);
-    for(HWND child:{ui.enabled,ui.server,ui.key,ui.device,ui.peer,ui.lock,ui.trusted,ui.test,ui.save,ui.status})
+    ui.install=Control(ui.wnd,L"BUTTON",L"安装或修复后台服务",BS_OWNERDRAW,cInstall);
+    for(HWND child:{ui.enabled,ui.server,ui.key,ui.device,ui.peer,ui.lock,ui.trusted,ui.test,ui.save,ui.status,ui.install})
         Font(child,ui.normal);
     if(ui.existing){
         ui.isEnabled=ui.saved.enabled;ui.autoLock=ui.saved.lockOnLastDisconnect;ui.trustedEventsOnly=ui.saved.trustedEventsOnly;
@@ -182,15 +204,17 @@ LRESULT CALLBACK WndProc(HWND hwnd,UINT msg,WPARAM w,LPARAM l){
     auto* ui=reinterpret_cast<Ui*>(GetWindowLongPtrW(hwnd,GWLP_USERDATA));
     switch(msg){
       case WM_CREATE:{
-        auto state=std::make_unique<Ui>();state->wnd=hwnd;
+        auto state=std::make_unique<Ui>();state->wnd=hwnd;state->dpi=kb::ui::Dpi(hwnd);
         state->existing=kb::ReadRemoteConfiguration(state->saved);
         SetWindowLongPtrW(hwnd,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(state.get()));
         Create(*state);state.release();return 0;
       }
-      case WM_GETMINMAXINFO:{
-        auto* info=reinterpret_cast<MINMAXINFO*>(l);info->ptMinTrackSize={760,800};return 0;
-      }
       case WM_SIZE:if(ui){Layout(*ui);InvalidateRect(hwnd,nullptr,TRUE);}return 0;
+      case kb::kRemotePageAppearance:if(ui){
+        ui->dpi=w?static_cast<UINT>(w):kb::ui::Dpi(hwnd);
+        Appearance(*ui);Layout(*ui);return 0;
+      }
+      case WM_ERASEBKGND:return 1;
       case WM_COMMAND:if(ui){
         const auto id=LOWORD(w);
         if(id==cEnabled){ui->isEnabled=!ui->isEnabled;UpdateButtons(*ui);return 0;}
@@ -198,6 +222,15 @@ LRESULT CALLBACK WndProc(HWND hwnd,UINT msg,WPARAM w,LPARAM l){
         if(id==cTrusted){ui->trustedEventsOnly=!ui->trustedEventsOnly;UpdateButtons(*ui);return 0;}
         if(id==cTest){Test(*ui);return 0;}
         if(id==cSave){Save(*ui);return 0;}
+        if(id==cInstall){
+          wchar_t path[32768]{};
+          if(GetModuleFileNameW(nullptr,path,32768)){
+            auto result=ShellExecuteW(ui->wnd,L"runas",path,L"--install",nullptr,SW_SHOWNORMAL);
+            SetWindowTextW(ui->status,reinterpret_cast<INT_PTR>(result)>32?
+               L"已启动安装程序。完成后即可使用后台服务。":L"无法启动安装程序。");
+          }
+          return 0;
+        }
       }break;
       case kTestFinished:if(ui){
         std::unique_ptr<TestResult> result(reinterpret_cast<TestResult*>(l));
@@ -222,24 +255,18 @@ LRESULT CALLBACK WndProc(HWND hwnd,UINT msg,WPARAM w,LPARAM l){
         for(auto font:{ui->normal,ui->bold,ui->smallFont,ui->heading})DeleteObject(font);
         DeleteObject(ui->cardBrush);DeleteObject(ui->inputBrush);
         SetWindowLongPtrW(hwnd,GWLP_USERDATA,0);delete ui;
-      }PostQuitMessage(0);return 0;
+      }return 0;
     }
     return DefWindowProcW(hwnd,msg,w,l);
 }
 } // namespace
-int APIENTRY wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int show){
-    INITCOMMONCONTROLSEX init{sizeof(init),ICC_STANDARD_CLASSES};InitCommonControlsEx(&init);
+HWND kb::CreateRemoteSettingsPage(HWND parent){
+    HINSTANCE instance=GetModuleHandleW(nullptr);
     WNDCLASSEXW klass{sizeof(klass)};klass.hInstance=instance;klass.lpfnWndProc=WndProc;
-    klass.lpszClassName=L"KenvixRustDeskUnlockSettings";
+    klass.lpszClassName=L"KenvixRustDeskSettingsPage";
     klass.hCursor=LoadCursorW(nullptr,IDC_ARROW);
-    klass.hbrBackground=reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
-    if(!RegisterClassExW(&klass))return 1;
-    auto window=CreateWindowExW(0,klass.lpszClassName,L"Kenvix · RustDesk API 解锁设置",
-         WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,860,810,
-         nullptr,nullptr,instance,nullptr);
-    if(!window)return 1;
-    BOOL dark=TRUE;DwmSetWindowAttribute(window,DWMWA_USE_IMMERSIVE_DARK_MODE,&dark,sizeof(dark));
-    ShowWindow(window,show);UpdateWindow(window);
-    MSG message{};while(GetMessageW(&message,nullptr,0,0)>0){TranslateMessage(&message);DispatchMessageW(&message);}
-    return static_cast<int>(message.wParam);
+    klass.hbrBackground=reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH));
+    if(!RegisterClassExW(&klass)&&GetLastError()!=ERROR_CLASS_ALREADY_EXISTS)return nullptr;
+    return CreateWindowExW(0,klass.lpszClassName,L"",WS_CHILD|WS_CLIPCHILDREN,
+                           0,0,1,1,parent,nullptr,instance,nullptr);
 }

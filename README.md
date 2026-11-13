@@ -4,9 +4,9 @@ Windows 10/11 原生锁屏的蓝牙与 RustDesk API 解锁程序。Windows Crede
 
 ## 功能
 
-- Windows C++20、Win32 与 Windows Runtime，提供原生登录凭据提供程序和设置窗口。
+- Windows C++20、Win32 与 Windows Runtime，提供原生登录凭据提供程序和统一设置窗口。
 - 兼容蓝牙低安全性手环存在检测和 Android Keystore ECDSA P-256 挑战响应认证。
-- 调整 RSSI 信号强度门槛。
+- 设置 RSSI 最低信号强度；界面自动跟随 Windows 应用浅色或深色模式，支持逐显示器 DPI 缩放与动态调整。
 - 可选 RustDesk API SSE 自动解锁和连接结束后锁定；支持目标设备 ID、来源设备 ID 限制与多连接状态管理。
 - RustDesk API Key 和 Windows 登录凭据使用 Windows DPAPI 加密保存。
 
@@ -20,9 +20,28 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-以管理员身份运行 `windows/install.ps1`，按设置程序提示绑定设备。卸载时运行 `windows/uninstall.ps1`。
+构建输出仅包含一个可执行文件 `KenvixBluetoothUnlock.exe` 和 Windows 原生登录必需的 `KenvixBleCredentialProvider.dll`。将二者放在同一目录，在管理员 PowerShell 中执行：
 
-GitHub Actions 将编译 x64 版本、运行 C++ 自动化测试，并在默认分支构建成功且对应版本尚未发布时创建 Release。每个版本的压缩包包含 DLL、EXE、安装脚本及文档。安装 Credential Provider 前请确认能够使用密码正常登录 Windows，首次安装建议在测试电脑执行。
+```powershell
+.\KenvixBluetoothUnlock.exe --install
+```
+
+安装后直接运行 `KenvixBluetoothUnlock.exe` 打开统一设置窗口。在“蓝牙解锁”和“RustDesk API”页面中分别配置身份验证。卸载使用 `--uninstall`。也可以使用 `windows/install.ps1` 和 `windows/uninstall.ps1`，这两个脚本会调用同一个 EXE。
+
+GitHub Actions 将编译 x64 版本、运行 C++ 自动化测试，并在默认分支构建成功且对应版本尚未发布时创建 Release。每个版本的压缩包包含一个 EXE、系统登录扩展 DLL、安装脚本及文档。安装 Credential Provider 前请确认能够使用密码正常登录 Windows，首次安装建议在测试电脑执行。
+
+## Windows 启动参数
+
+| 参数 | 功能 |
+| --- | --- |
+| 无参数或 `--settings` | 启动带有蓝牙解锁及 RustDesk API 页面的一体化设置界面 |
+| `--install` | 安装 EXE、凭据提供程序 DLL，注册系统登录扩展及 Windows 后台服务 |
+| `--uninstall` | 停止并删除后台服务，移除系统登录扩展和保存的配置 |
+| `--service` | 由 Windows 服务管理器启动 SSE 后台服务 |
+| `--lock` | 在当前交互式用户会话请求锁定 Windows |
+| `--self-test` | 执行无需安装系统服务的启动自检 |
+
+Windows 服务安装到 `KenvixRustDeskUnlock`，进程使用同一 EXE 的 `--service` 参数运行。设置窗口在需要写入系统级配置时自动请求管理员权限；服务启动和锁定操作不请求交互式提升权限。
 
 ## RustDesk API
 

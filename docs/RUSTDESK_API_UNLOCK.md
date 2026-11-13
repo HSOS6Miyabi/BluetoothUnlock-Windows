@@ -29,10 +29,10 @@ API Key 只保存在本机受限制的配置目录中，并使用 Windows DPAPI 
 
 ## 二、设置 Windows 端
 
-1. 以管理员身份打开 `KenvixBleSettings.exe`。
+1. 以管理员身份打开 `KenvixBluetoothUnlock.exe`。
 2. 选择 **仅 RustDesk**、**手机验证** 或 **手环检测**。若只需 RustDesk 解锁，可以选择 **仅 RustDesk**，电脑不必安装蓝牙适配器。
 3. 输入 Windows 账户名、计算机名或域名、账户密码并保存。密码经过本机验证后加密保存。
-4. 点击主窗口右上角的 **RustDesk API 设置**。
+4. 点击窗口顶部的 **RustDesk API** 页面。
 5. 打开 RustDesk 自动解锁，填写下面的信息并保存。
 
 | 设置 | 填写内容 |
@@ -45,7 +45,7 @@ API Key 只保存在本机受限制的配置目录中，并使用 Windows DPAPI 
 
 点击 **测试 SSE 连接** 可以验证服务器地址、TLS 证书及 API Key 是否有效。测试操作会建立一次 SSE 订阅并检查 HTTP 状态，不会发送远程连接事件或触发解锁。
 
-保存 RustDesk 设置后，Windows 后台服务会重新读取配置。若服务尚未安装或已经停止，可使用管理员 PowerShell 执行 `Start-Service KenvixRustDeskUnlock`。
+保存 RustDesk 设置后，Windows 后台服务会重新读取配置。若服务尚未安装，可在 RustDesk 页面点击 **安装或修复后台服务**。服务已安装但停止时，可在管理员 PowerShell 中执行 `Start-Service KenvixRustDeskUnlock`。
 
 ## 三、解锁和自动锁定
 

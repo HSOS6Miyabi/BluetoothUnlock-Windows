@@ -39,7 +39,7 @@ jobs:
           New-Item -Type Directory -Path (Join-Path $stage 'windows') -Force | Out-Null
           New-Item -Type Directory -Path (Join-Path $stage 'build\windows\Release') -Force | Out-Null
           New-Item -Type Directory -Path (Join-Path $stage 'docs') -Force | Out-Null
-          foreach ($name in @('KenvixBleCredentialProvider.dll','KenvixBleSettings.exe','KenvixRustDeskSettings.exe','KenvixRustDeskService.exe')) {
+          foreach ($name in @('KenvixBleCredentialProvider.dll','KenvixBluetoothUnlock.exe')) {
             $src = Join-Path 'build\windows\Release' $name
             if (-not (Test-Path $src)) { throw "Missing required artifact: $src" }
             Copy-Item $src (Join-Path $stage 'build\windows\Release')
