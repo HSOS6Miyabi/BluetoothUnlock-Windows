@@ -1,4 +1,5 @@
 #include "remote_http.h"
+#include "service_manager.h"
 #include "remote_ipc.h"
 #include "remote_storage.h"
 #include "security.h"
@@ -142,12 +143,8 @@ void WINAPI ServiceMain(DWORD,LPWSTR*){
     CloseHandle(g_stop);g_stop=nullptr;
 }
 } // namespace
-int wmain(int argc,wchar_t** argv){
-    if(argc==2&&wcscmp(argv[1],L"--lock")==0){
-        return LockWorkStation()?0:1;
-    }
+int kb::RunRustDeskService(){
     SERVICE_TABLE_ENTRYW table[]{
         {const_cast<LPWSTR>(kServiceName),ServiceMain},{nullptr,nullptr}};
-    if(!StartServiceCtrlDispatcherW(table))return 1;
-    return 0;
+    return StartServiceCtrlDispatcherW(table)?0:1;
 }

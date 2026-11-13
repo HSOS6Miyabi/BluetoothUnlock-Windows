@@ -10,13 +10,15 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-使用**管理员权限**运行 `windows\install.ps1`，脚本会安装原生设置程序并向 Windows 注册一个额外的 Credential Provider：
+将 `KenvixBluetoothUnlock.exe` 与 `KenvixBleCredentialProvider.dll` 放在同一目录。以管理员身份在该目录执行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\windows\install.ps1
+.\KenvixBluetoothUnlock.exe --install
 ```
 
-打开 `C:\Program Files\Kenvix\BluetoothUnlock\KenvixBleSettings.exe`，首次设置时同样使用管理员权限。选择解锁模式、授权设备与 RSSI，再填写 Windows 账户信息和该账户的密码。账户密码只在本地保存，经 DPAPI 加密。
+安装程序会将二进制文件复制到 `C:\Program Files\Kenvix\BluetoothUnlock`，安装 `KenvixRustDeskUnlock` 后台服务，并注册原生 Windows 凭据提供程序。
+
+打开安装目录中的 `KenvixBluetoothUnlock.exe`。如果当前用户没有管理员权限，设置程序会请求提升权限。统一设置窗口有“蓝牙解锁”和“RustDesk API”两个页面。蓝牙页面可选择手机验证、手环检测或仅 RustDesk，并可设置 RSSI 阈值；随后填写 Windows 登录账户和密码。密码只在本机保存，经 DPAPI 加密。界面使用 Windows 应用主题设置，自动切换浅色与深色模式，并按显示器 DPI 缩放字体和控件。
 
 建议先在测试机器或虚拟机中检查 Credential Provider 注册和登录界面。真实蓝牙功能还需要一台物理 Windows 电脑。
 
@@ -59,13 +61,13 @@ RSSI 数值越接近 `0 dBm`，表示接收信号通常越强。例如，`-55 dB
 
 ## 卸载与恢复
 
-以管理员身份运行：
+在管理员 PowerShell 中运行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\windows\uninstall.ps1
+& 'C:\Program Files\Kenvix\BluetoothUnlock\KenvixBluetoothUnlock.exe' --uninstall
 ```
 
-脚本会移除本项目的 Credential Provider 和 COM 注册信息，删除程序文件及加密配置。重新启动 Windows 后生效。如需保留个人配置文件，可增加 `-KeepSettings` 参数。卸载不修改系统已有的登录方式。
+程序会停止并删除后台服务，移除 Credential Provider 和 COM 注册信息，删除安装文件及本程序配置。系统正在使用的文件会安排在重新启动后删除。卸载不修改 Windows 原有登录方式。
 
 如果无法进入通常的桌面，可从安全模式或 Windows 恢复环境执行注册表操作。仅删除本项目的注册表项：
 
