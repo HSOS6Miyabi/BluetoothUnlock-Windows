@@ -2,6 +2,7 @@
 #include "security.h"
 #include <winrt/base.h>
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Devices.Bluetooth.h>
 #include <winrt/Windows.Devices.Bluetooth.Advertisement.h>
 #include <winrt/Windows.Devices.Bluetooth.GenericAttributeProfile.h>
@@ -136,7 +137,7 @@ std::vector<SeenDevice> BleScanner::Snapshot() const {
     if(fresh)result.push_back({address,s.rssi,s.observations,s.phone,fresh});
   }
   std::sort(result.begin(),result.end(),[](const SeenDevice&a,const SeenDevice&b){
-    if(a.phone!=b.phone)return a.phone>b.phone;return a.rssi>b.rssi;});
+    if(a.phoneService!=b.phoneService)return a.phoneService>b.phoneService;return a.rssi>b.rssi;});
   return result;
 }
 bool IsPairedBleDevice(uint64_t address){
