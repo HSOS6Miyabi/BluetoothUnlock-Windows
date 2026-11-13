@@ -146,7 +146,7 @@ std::optional<std::chrono::system_clock::time_point> ParseUtcTimestamp(std::stri
         fraction = nanoseconds{value};
     }
     if (at + 1 != input.size() || input[at] != 'Z') return std::nullopt;
-    return sys_days{date} + hours{hour} + minutes{minute} + seconds{second} + fraction;
+    return time_point_cast<system_clock::duration>(sys_days{date} + hours{hour} + minutes{minute} + seconds{second} + fraction);
 }
 
 std::optional<Event> ParseEvent(std::string_view json, std::string_view name) {
