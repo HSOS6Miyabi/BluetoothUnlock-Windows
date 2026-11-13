@@ -19,7 +19,7 @@ constexpr UINT kTestFinished=WM_APP+50;
 struct TestResult{bool ok{};std::wstring message;};
 struct Ui{
     HWND wnd{},enabled{},server{},key{},device{},peer{},lock{},trusted{},test{},save{},status{};
-    HFONT normal{},bold{},small{},heading{};
+    HFONT normal{},bold{},smallFont{},heading{};
     HBRUSH cardBrush{},inputBrush{};
     kb::RemoteConfiguration saved{};
     bool existing{},isEnabled{},autoLock{true},trustedEventsOnly{},busy{};
@@ -75,13 +75,13 @@ void Paint(Ui& ui){
     Label(dc,54,31,L"Kenvix",kBlue,ui.heading);
     Label(dc,182,37,L"RustDesk API",kText,ui.heading);
     Label(dc,54,91,L"RustDesk 连接事件可触发 Windows 自动解锁和连接结束后的锁定。",kMuted,ui.normal);
-    Label(dc,54,202,L"普通审计事件由 RustDesk 客户端上报，建议限制可信服务器的访问。",kMuted,ui.small);
-    Label(dc,54,231,L"服务器地址（HTTPS）",kMuted,ui.small);
-    Label(dc,54,319,L"SSE API Key（已保存时留空即可）",kMuted,ui.small);
-    Label(dc,54,405,L"本设备 RustDesk ID",kMuted,ui.small);
+    Label(dc,54,202,L"普通审计事件由 RustDesk 客户端上报，建议限制可信服务器的访问。",kMuted,ui.smallFont);
+    Label(dc,54,231,L"服务器地址（HTTPS）",kMuted,ui.smallFont);
+    Label(dc,54,319,L"SSE API Key（已保存时留空即可）",kMuted,ui.smallFont);
+    Label(dc,54,405,L"本设备 RustDesk ID",kMuted,ui.smallFont);
     int usable=r.right-110;
-    Label(dc,54+(usable-20)/2+20,405,L"允许的连接方设备 ID（可选）",kMuted,ui.small);
-    Label(dc,54,r.bottom-54,L"API Key 可从账户 → 消息推送 → SSE 实时订阅中生成。",kMuted,ui.small);
+    Label(dc,54+(usable-20)/2+20,405,L"允许的连接方设备 ID（可选）",kMuted,ui.smallFont);
+    Label(dc,54,r.bottom-54,L"API Key 可从账户 → 消息推送 → SSE 实时订阅中生成。",kMuted,ui.smallFont);
     EndPaint(ui.wnd,&ps);
 }
 void Draw(DRAWITEMSTRUCT* d,Ui& ui){
@@ -149,7 +149,7 @@ void Create(Ui& ui){
         CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
     ui.bold=CreateFontW(-17,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
         CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
-    ui.small=CreateFontW(-15,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
+    ui.smallFont=CreateFontW(-15,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
         CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
     ui.heading=CreateFontW(-29,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
         CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
@@ -219,7 +219,7 @@ LRESULT CALLBACK WndProc(HWND hwnd,UINT msg,WPARAM w,LPARAM l){
         MSG message{};
         while(PeekMessageW(&message,hwnd,kTestFinished,kTestFinished,PM_REMOVE))
             delete reinterpret_cast<TestResult*>(message.lParam);
-        for(auto font:{ui->normal,ui->bold,ui->small,ui->heading})DeleteObject(font);
+        for(auto font:{ui->normal,ui->bold,ui->smallFont,ui->heading})DeleteObject(font);
         DeleteObject(ui->cardBrush);DeleteObject(ui->inputBrush);
         SetWindowLongPtrW(hwnd,GWLP_USERDATA,0);delete ui;
       }PostQuitMessage(0);return 0;
