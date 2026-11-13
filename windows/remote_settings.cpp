@@ -40,12 +40,12 @@ void Appearance(Ui& ui){
     kAccentText=ui.palette.accentText;kBorder=ui.palette.border;kSubtle=ui.palette.subtle;
     auto normal=kb::ui::MakeFont(ui.dpi,18);
     auto bold=kb::ui::MakeFont(ui.dpi,18,FW_SEMIBOLD);
-    auto small=kb::ui::MakeFont(ui.dpi,16);
+    auto smallText=kb::ui::MakeFont(ui.dpi,16);
     auto heading=kb::ui::MakeFont(ui.dpi,25,FW_SEMIBOLD);
     if(ui.normal){for(HWND item:{ui.enabled,ui.server,ui.key,ui.device,ui.peer,ui.lock,ui.trusted,ui.test,ui.save,ui.status,ui.install})
         if(item)SendMessageW(item,WM_SETFONT,reinterpret_cast<WPARAM>(normal),FALSE);}
     for(auto f:{ui.normal,ui.bold,ui.smallFont,ui.heading})if(f)DeleteObject(f);
-    ui.normal=normal;ui.bold=bold;ui.smallFont=small;ui.heading=heading;
+    ui.normal=normal;ui.bold=bold;ui.smallFont=smallText;ui.heading=heading;
     if(ui.cardBrush)DeleteObject(ui.cardBrush);
     if(ui.inputBrush)DeleteObject(ui.inputBrush);
     ui.cardBrush=CreateSolidBrush(kCard);ui.inputBrush=CreateSolidBrush(kInput);
@@ -86,16 +86,16 @@ void Layout(Ui& ui){
     auto place=[&](HWND child,int x,int y,int width,int height){
         Move(child,S(ui,x),S(ui,y),S(ui,width),S(ui,height));};
     place(ui.install,std::max(45,w-300),21,247,43);
-    place(ui.enabled,left,100,usable,45);
-    place(ui.server,left,224,usable,46);
-    place(ui.key,left,302,usable,46);
-    place(ui.device,left,384,(usable-20)/2,46);
-    place(ui.peer,left+(usable-20)/2+20,384,(usable-20)/2,46);
-    place(ui.lock,left,455,usable,42);
-    place(ui.trusted,left,507,usable,42);
-    place(ui.test,left,std::max(565,h-77),182,48);
-    place(ui.save,w-228,std::max(565,h-77),182,48);
-    place(ui.status,left+202,std::max(566,h-76),std::max(160,usable-408),50);
+    place(ui.enabled,left,94,usable,43);
+    place(ui.server,left,199,usable,44);
+    place(ui.key,left,279,usable,44);
+    place(ui.device,left,359,(usable-20)/2,44);
+    place(ui.peer,left+(usable-20)/2+20,359,(usable-20)/2,44);
+    place(ui.lock,left,421,usable,36);
+    place(ui.trusted,left,463,usable,36);
+    place(ui.test,left,std::max(510,h-76),182,46);
+    place(ui.save,w-228,std::max(510,h-76),182,46);
+    place(ui.status,left+202,std::max(511,h-75),std::max(160,usable-408),46);
 }
 void Paint(Ui& ui){
     PAINTSTRUCT ps{};auto dc=BeginPaint(ui.wnd,&ps);
@@ -105,12 +105,12 @@ void Paint(Ui& ui){
     auto rect=[&](int x1,int y1,int x2,int y2){return RECT{S(ui,x1),S(ui,y1),S(ui,x2),S(ui,y2)};};
     kb::ui::Rounded(dc,rect(18,4,w-18,h-12),kCard,S(ui,20));
     Label(dc,S(ui,46),S(ui,22),L"RustDesk API",kText,ui.heading);
-    Label(dc,S(ui,46),S(ui,66),L"通过服务器事件管理远程解锁和连接结束后的锁定",kMuted,ui.normal);
-    Label(dc,S(ui,46),S(ui,164),L"请使用可信服务器，并限制连接方设备 ID。",kMuted,ui.smallFont);
-    Label(dc,S(ui,46),S(ui,195),L"RustDesk API 服务器地址（HTTPS）",kMuted,ui.smallFont);
-    Label(dc,S(ui,46),S(ui,275),L"SSE API Key（已保存时可留空）",kMuted,ui.smallFont);
-    Label(dc,S(ui,46),S(ui,353),L"本机 RustDesk ID",kMuted,ui.smallFont);
-    Label(dc,S(ui,46+(std::max(390,w-92)-20)/2+20),S(ui,353),L"允许的连接方 ID（可选）",kMuted,ui.smallFont);
+    Label(dc,S(ui,46),S(ui,63),L"通过服务器事件管理远程解锁和连接结束后的锁定",kMuted,ui.normal);
+    Label(dc,S(ui,46),S(ui,150),L"请使用可信服务器，并限制连接方设备 ID。",kMuted,ui.smallFont);
+    Label(dc,S(ui,46),S(ui,171),L"RustDesk API 服务器地址（HTTPS）",kMuted,ui.smallFont);
+    Label(dc,S(ui,46),S(ui,251),L"SSE API Key（已保存时可留空）",kMuted,ui.smallFont);
+    Label(dc,S(ui,46),S(ui,332),L"本机 RustDesk ID",kMuted,ui.smallFont);
+    Label(dc,S(ui,46+(std::max(390,w-92)-20)/2+20),S(ui,332),L"允许的连接方 ID（可选）",kMuted,ui.smallFont);
     EndPaint(ui.wnd,&ps);
 }
 void Draw(DRAWITEMSTRUCT* d,Ui& ui){

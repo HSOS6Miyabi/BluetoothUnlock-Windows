@@ -58,7 +58,7 @@ void Appearance(Ui& ui){
   kAccentText=ui.palette.accentText;kBorder=ui.palette.border;kSubtle=ui.palette.subtle;
   HFONT normal=kb::ui::MakeFont(ui.dpi,18);
   HFONT heading=kb::ui::MakeFont(ui.dpi,31,FW_SEMIBOLD);
-  HFONT small=kb::ui::MakeFont(ui.dpi,16);
+  HFONT smallText=kb::ui::MakeFont(ui.dpi,16);
   if(ui.font){
     for(HWND item:{ui.bleTab,ui.remote,ui.high,ui.low,ui.remoteOnly,ui.devices,
         ui.readKey,ui.slider,ui.username,ui.domain,ui.password,ui.save,ui.verified,
@@ -67,7 +67,7 @@ void Appearance(Ui& ui){
   }
   if(ui.font)DeleteObject(ui.font);if(ui.heading)DeleteObject(ui.heading);
   if(ui.smallFont)DeleteObject(ui.smallFont);
-  ui.font=normal;ui.heading=heading;ui.smallFont=small;
+  ui.font=normal;ui.heading=heading;ui.smallFont=smallText;
   if(ui.editBrush)DeleteObject(ui.editBrush);
   if(ui.panelBrush)DeleteObject(ui.panelBrush);
   ui.editBrush=CreateSolidBrush(kEdit);ui.panelBrush=CreateSolidBrush(kPanel);
