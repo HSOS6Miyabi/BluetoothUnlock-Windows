@@ -30,7 +30,7 @@ struct SaveResult{bool ok{};std::wstring message;kb::Configuration saved;};
 struct Ui {
   HWND host{};
   HWND high{},low{},remoteOnly{},devices{},readKey{},slider{},username{},domain{},password{},save{},verified{},status{},signal{},fingerprint{},remote{};
-  HFONT font{},heading{},small{};
+  HFONT font{},heading{},smallFont{};
   HBRUSH editBrush{},panelBrush{};
   kb::BleScanner scanner;
   kb::Configuration config{};
@@ -212,7 +212,7 @@ void CreateControls(Ui& ui){
                      CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
   ui.heading=CreateFontW(-32,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
                         CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
-  ui.small=CreateFontW(-15,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
+  ui.smallFont=CreateFontW(-15,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
                       CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
   ui.editBrush=CreateSolidBrush(kEdit);ui.panelBrush=CreateSolidBrush(kPanel);
   ui.remote=Child(ui.host,L"BUTTON",L"RustDesk API 设置",BS_OWNERDRAW,cRemote);
@@ -263,10 +263,10 @@ void Paint(HWND hwnd,Ui& ui){
   Text(dc,32,94,L"通过蓝牙设备或已认证的 RustDesk 远程连接自动解锁 Windows",kMuted,ui.font);
   Text(dc,30,251,L"附近的蓝牙设备",kText,ui.font);
   Text(dc,col+32,153,L"解锁条件",kText,ui.font);
-  Text(dc,col+32,301,L"Windows 用户名",kMuted,ui.small);
-  Text(dc,col+32+(std::max(350,r.right-col-66)-16)/2+16,301,L"计算机名或域名",kMuted,ui.small);
-  Text(dc,col+32,394,L"Windows 账户密码（已有配置时可以留空）",kMuted,ui.small);
-  Text(dc,col+32,480,L"保存后，系统原有登录选项将继续保留。",kMuted,ui.small);
+  Text(dc,col+32,301,L"Windows 用户名",kMuted,ui.smallFont);
+  Text(dc,col+32+(std::max(350,r.right-col-66)-16)/2+16,301,L"计算机名或域名",kMuted,ui.smallFont);
+  Text(dc,col+32,394,L"Windows 账户密码（已有配置时可以留空）",kMuted,ui.smallFont);
+  Text(dc,col+32,480,L"保存后，系统原有登录选项将继续保留。",kMuted,ui.smallFont);
   EndPaint(hwnd,&ps);
 }
 void DrawButton(DRAWITEMSTRUCT* info,Ui& ui){
@@ -372,7 +372,7 @@ LRESULT CALLBACK WndProc(HWND hwnd,UINT msg,WPARAM w,LPARAM l){
       while(PeekMessageW(&pending,hwnd,msgSave,msgSave,PM_REMOVE))
         delete reinterpret_cast<SaveResult*>(pending.lParam);
       DeleteObject(ui->editBrush);DeleteObject(ui->panelBrush);
-      DeleteObject(ui->font);DeleteObject(ui->heading);DeleteObject(ui->small);
+      DeleteObject(ui->font);DeleteObject(ui->heading);DeleteObject(ui->smallFont);
       SetWindowLongPtrW(hwnd,GWLP_USERDATA,0);delete ui;
     }PostQuitMessage(0);return 0;
   }
