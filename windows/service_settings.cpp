@@ -34,14 +34,14 @@ HWND Button(HWND parent,int id,const wchar_t* title,DWORD styles=BS_OWNERDRAW){
 void ApplyAppearance(Ui& ui){
     const auto fresh=kb::ui::Colors();
     const HFONT font=kb::ui::MakeFont(ui.dpi,17),
-                small=kb::ui::MakeFont(ui.dpi,15),
+                smallText=kb::ui::MakeFont(ui.dpi,15),
                 heading=kb::ui::MakeFont(ui.dpi,27,FW_SEMIBOLD);
     for(auto child:{ui.install,ui.start,ui.stop,ui.uninstall,ui.refresh,ui.keep})
         if(child)SendMessageW(child,WM_SETFONT,reinterpret_cast<WPARAM>(font),FALSE);
     if(ui.font)DeleteObject(ui.font);
     if(ui.smallFont)DeleteObject(ui.smallFont);
     if(ui.heading)DeleteObject(ui.heading);
-    ui.font=font;ui.smallFont=small;ui.heading=heading;
+    ui.font=font;ui.smallFont=smallText;ui.heading=heading;
     ui.colors=fresh;
     InvalidateRect(ui.wnd,nullptr,TRUE);
 }
