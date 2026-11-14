@@ -91,8 +91,9 @@ bool CryptGcm(bool encrypt, std::span<const std::uint8_t> input,
             reinterpret_cast<PUCHAR>(&objectLength), sizeof(objectLength), &received, 0) < 0 ||
             objectLength == 0 || objectLength > 65536) return false;
     std::vector<std::uint8_t> keyObject(objectLength);
-    BcryptKey key;
     bool success = false;
+    {
+    BcryptKey key;
     if (BCryptGenerateSymmetricKey(algorithm.handle, &key.handle, keyObject.data(),
             objectLength, symmetric.data(), static_cast<ULONG>(symmetric.size()), 0) >= 0) {
         BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO auth;
@@ -111,6 +112,7 @@ bool CryptGcm(bool encrypt, std::span<const std::uint8_t> input,
                 &auth, nullptr, 0, output.data(), static_cast<ULONG>(output.size()), &written, 0);
         success = status >= 0 && written == input.size();
         if (!success) { Clear(output); output.clear(); }
+    }
     }
     Clear(keyObject);
     return success;
