@@ -72,6 +72,12 @@ jobs:
       - name: Compare Android and Windows authentication fixtures
         shell: bash
         run: cmp tests/interop_vectors.properties android-source/app/src/test/resources/interop_vectors.properties
+      - name: Check named BLE advertisements on both platforms
+        shell: bash
+        run: |
+          grep -q 'Advertisement().LocalName()' windows/ble.cpp
+          grep -q 'LVS_REPORT' windows/settings.cpp
+          grep -q 'setIncludeDeviceName(true)' android-source/app/src/main/java/top/kenvix/bleunlock/UnlockService.kt
       - name: Run portable C++ and OpenSSL tests
         shell: bash
         run: |

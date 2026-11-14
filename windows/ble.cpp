@@ -99,7 +99,8 @@ void BleScanner::Start(){
     const int rssi=args.RawSignalStrengthInDBm();
     if(rssi<=-127||rssi>-15)return;
     auto name=std::wstring(args.Advertisement().LocalName().c_str());
-    name.erase(std::remove_if(name.begin(),name.end(),[](wchar_t ch){return ch < 0x20 || ch==0x7f;}),name.end());
+    name.erase(std::remove_if(name.begin(),name.end(),[](wchar_t ch){return ch < 0x20 || ch==0x7f ||
+        (ch>=0x202a&&ch<=0x202e) || (ch>=0x2066&&ch<=0x2069);}),name.end());
     if(name.size()>128)name.resize(128);
     if(name.find_first_not_of(L" ")==std::wstring::npos)name.clear();
     bool phone=false;

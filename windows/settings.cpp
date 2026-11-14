@@ -356,6 +356,7 @@ void CreateControls(Ui& ui){
   UpdateModeControls(ui);
   ui.remotePage=kb::CreateRemoteSettingsPage(ui.host);
   ui.servicePage=kb::CreateServiceSettingsPage(ui.host);
+  Appearance(ui);
   RefreshLabels(ui);Layout(ui);
   SetPage(ui,0);
 }
@@ -438,7 +439,7 @@ LRESULT CALLBACK WndProc(HWND hwnd,UINT msg,WPARAM w,LPARAM l){
     case WM_TIMER:if(ui&&w==1){Populate(*ui);}return 0;
     case WM_HSCROLL:if(ui&&reinterpret_cast<HWND>(l)==ui->slider){RefreshLabels(*ui);return 0;}break;
     case WM_COMMAND:if(ui){
-      const auto id=LOWORD(w),code=HIWORD(w);
+      const auto id=LOWORD(w);
       if(id==cHigh||id==cLow||id==cOnlyRemote){
         ui->selectedMode=id==cHigh?kb::Mode::high:id==cLow?kb::Mode::low:kb::Mode::remote;
         for(HWND control:{ui->high,ui->low,ui->remoteOnly})InvalidateRect(control,nullptr,TRUE);
