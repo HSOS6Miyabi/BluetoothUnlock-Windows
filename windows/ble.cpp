@@ -1,5 +1,6 @@
 #include "ble.h"
 #include "security.h"
+#include "../core/ble_presence.h"
 #include <winrt/base.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
@@ -78,12 +79,14 @@ bool ReadKey(PhoneGatt& gatt,kenvix::PublicKey& key){
 }
 } // namespace
 struct BleScanner::Impl {
-  struct Sample {std::wstring name;int rssi{-127};unsigned observations{};bool phone{};
-    std::chrono::steady_clock::time_point last{};};
-  struct State {std::mutex mutex;std::unordered_map<uint64_t,Sample> samples;};
+  struct State {
+    std::mutex mutex;
+    ble::PresenceCache cache;
+  };
   std::shared_ptr<State> state=std::make_shared<State>();
   A::BluetoothLEAdvertisementWatcher watcher{nullptr};
   winrt::event_token received{};
+  std::chrono::steady_clock::time_point lastRetry{};
   bool started{};
 };
 BleScanner::BleScanner():impl_(std::make_unique<Impl>()){}
@@ -91,59 +94,65 @@ BleScanner::~BleScanner(){Stop();}
 void BleScanner::Start(){
   if(impl_->started)return;
   auto watcher=A::BluetoothLEAdvertisementWatcher{};
+  // Active scanning requests the scan response, which normally carries the name.
   watcher.ScanningMode(A::BluetoothLEScanningMode::Active);
   auto weak=std::weak_ptr<Impl::State>(impl_->state);
   const auto token=watcher.Received([weak](auto const&,A::BluetoothLEAdvertisementReceivedEventArgs const& args){
-    try {
-    auto state=weak.lock();if(!state)return;
-    const int rssi=args.RawSignalStrengthInDBm();
-    if(rssi<=-127||rssi>-15)return;
-    auto name=std::wstring(args.Advertisement().LocalName().c_str());
-    name.erase(std::remove_if(name.begin(),name.end(),[](wchar_t ch){return ch < 0x20 || ch==0x7f ||
-        (ch>=0x202a&&ch<=0x202e) || (ch>=0x2066&&ch<=0x2069);}),name.end());
-    if(name.size()>128)name.resize(128);
-    if(name.find_first_not_of(L" ")==std::wstring::npos)name.clear();
-    bool phone=false;
-    for(auto const& uuid:args.Advertisement().ServiceUuids()){
-      if(uuid==serviceId){phone=true;break;}
-    }
-    std::lock_guard lock(state->mutex);
-    if(state->samples.size()>=128 && !state->samples.contains(args.BluetoothAddress())){
-      auto oldest=std::min_element(state->samples.begin(),state->samples.end(),
-        [](auto const& a,auto const& b){return a.second.last<b.second.last;});
-      if(oldest!=state->samples.end())state->samples.erase(oldest);
-    }
-    auto& sample=state->samples[args.BluetoothAddress()];
-    const auto now=std::chrono::steady_clock::now();
-    if(now-sample.last>4s)sample.observations=0;
-    sample.observations=std::min(10u,sample.observations+1);
-    sample.rssi=rssi;sample.phone=sample.phone||phone;
-    if(!name.empty())sample.name=std::move(name);
-    sample.last=now;
-    } catch(...) { /* Fail closed if a Bluetooth event cannot be read. */ }
+    try{
+      auto state=weak.lock();
+      if(!state)return;
+      const int rssi=args.RawSignalStrengthInDBm();
+      const std::wstring name(args.Advertisement().LocalName().c_str());
+      bool phone=false;
+      for(const auto& uuid:args.Advertisement().ServiceUuids()){
+        if(uuid==serviceId){phone=true;break;}
+      }
+      std::lock_guard lock(state->mutex);
+      state->cache.Observe(args.BluetoothAddress(),rssi,name,phone,
+                            std::chrono::steady_clock::now());
+    }catch(...){/* Ignore malformed radio events. */}
   });
-  try{watcher.Start();impl_->watcher=watcher;impl_->received=token;impl_->started=true;}
-  catch(...){watcher.Received(token);throw;}
+  try{
+    watcher.Start();
+    impl_->watcher=watcher;
+    impl_->received=token;
+    impl_->started=true;
+    impl_->lastRetry=std::chrono::steady_clock::now();
+  }catch(...){
+    watcher.Received(token);
+    throw;
+  }
+}
+bool BleScanner::EnsureRunning(){
+  try{
+    if(impl_->started &&
+        impl_->watcher.Status()==A::BluetoothLEAdvertisementWatcherStatus::Started)return true;
+    const auto now=std::chrono::steady_clock::now();
+    if(impl_->lastRetry!=std::chrono::steady_clock::time_point{} &&
+       now-impl_->lastRetry<10s)return false;
+    impl_->lastRetry=now;
+    if(!impl_->started){Start();return true;}
+    if(impl_->watcher.Status()==A::BluetoothLEAdvertisementWatcherStatus::Stopping)return false;
+    impl_->watcher.Start();
+    return impl_->watcher.Status()==A::BluetoothLEAdvertisementWatcherStatus::Started;
+  }catch(...){return false;}
 }
 void BleScanner::Stop(){
   if(!impl_->started)return;
   impl_->watcher.Received(impl_->received);
   try{impl_->watcher.Stop();}catch(...){}
-  impl_->watcher=nullptr;impl_->started=false;
-  // Dropping State after event revocation cannot invalidate an in-flight handler.
-  {std::lock_guard lock(impl_->state->mutex);impl_->state->samples.clear();}
+  impl_->watcher=nullptr;
+  impl_->started=false;
+  {std::lock_guard lock(impl_->state->mutex);impl_->state->cache.Clear();}
 }
 std::vector<SeenDevice> BleScanner::Snapshot() const {
   std::vector<SeenDevice> result;
   auto& state=*impl_->state;
   std::lock_guard lock(state.mutex);
-  const auto now=std::chrono::steady_clock::now();
-  for(auto const& [address,s]:state.samples){
-    const auto fresh=now-s.last<=4s;
-    if(fresh&&!s.name.empty())result.push_back({address,s.name,s.rssi,s.observations,s.phone,fresh});
+  for(auto& item:state.cache.Snapshot(std::chrono::steady_clock::now())){
+    result.push_back({item.address,std::move(item.name),item.rssi,item.observations,
+                      item.phoneService,item.fresh,item.missedWindows});
   }
-  std::sort(result.begin(),result.end(),[](const SeenDevice&a,const SeenDevice&b){
-    if(a.phoneService!=b.phoneService)return a.phoneService>b.phoneService;return a.rssi>b.rssi;});
   return result;
 }
 bool IsPairedBleDevice(uint64_t address){

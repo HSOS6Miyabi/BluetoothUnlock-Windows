@@ -36,7 +36,7 @@ struct KeyResult{uint64_t address{};bool ok{};kenvix::PublicKey key{};};
 struct SaveResult{bool ok{};std::wstring message;kb::Configuration saved;};
 struct Ui {
   HWND host{};
-  HWND high{},low{},remoteOnly{},devices{},readKey{},slider{},username{},domain{},password{},save{},verified{},status{},signal{},fingerprint{},remote{},bleTab{},serviceTab{},remotePage{},servicePage{};
+  HWND high{},low{},remoteOnly{},devices{},scanHint{},readKey{},slider{},username{},domain{},password{},save{},verified{},status{},signal{},fingerprint{},remote{},bleTab{},serviceTab{},remotePage{},servicePage{};
   HFONT font{},heading{},smallFont{};
   HBRUSH editBrush{},panelBrush{};
   kb::ui::Palette palette{};
@@ -64,7 +64,7 @@ void Appearance(Ui& ui){
   HFONT smallText=kb::ui::MakeFont(ui.dpi,16);
   if(ui.font){
     for(HWND item:{ui.bleTab,ui.remote,ui.serviceTab,ui.high,ui.low,ui.remoteOnly,ui.devices,
-        ui.readKey,ui.slider,ui.username,ui.domain,ui.password,ui.save,ui.verified,
+        ui.scanHint,ui.readKey,ui.slider,ui.username,ui.domain,ui.password,ui.save,ui.verified,
         ui.status,ui.signal,ui.fingerprint})
       if(item)SendMessageW(item,WM_SETFONT,reinterpret_cast<WPARAM>(normal),FALSE);
   }
@@ -133,7 +133,7 @@ void RefreshLabels(Ui& ui){
 }
 void SetPage(Ui& ui,int page){
   ui.activePage=page;
-  for(HWND child:{ui.high,ui.low,ui.remoteOnly,ui.devices,ui.readKey,ui.slider,
+  for(HWND child:{ui.high,ui.low,ui.remoteOnly,ui.devices,ui.scanHint,ui.readKey,ui.slider,
       ui.username,ui.domain,ui.password,ui.save,ui.verified,ui.status,ui.signal,ui.fingerprint})
     ShowWindow(child,page==0?SW_SHOW:SW_HIDE);
   if(page==0)UpdateModeControls(ui);
@@ -165,13 +165,14 @@ void Layout(Ui& ui){
   place(ui.low,left+segment+10,212,segment,52);
   place(ui.remoteOnly,left+(segment+10)*2,212,segment,52);
   const int listWidth=col-left-14;
+  place(ui.scanHint,left,307,listWidth,24);
   place(ui.devices,left,333,listWidth,std::max(190,h-333-165));
   if(ui.devices){
-    const int nameWidth=std::max(250,static_cast<int>(listWidth*0.45));
-    const int addressWidth=std::max(185,static_cast<int>(listWidth*0.32));
+    const int nameWidth=std::max(205,static_cast<int>(listWidth*0.41));
+    const int addressWidth=std::max(165,static_cast<int>(listWidth*0.30));
     ListView_SetColumnWidth(ui.devices,0,S(ui,nameWidth));
     ListView_SetColumnWidth(ui.devices,1,S(ui,addressWidth));
-    ListView_SetColumnWidth(ui.devices,2,S(ui,std::max(120,listWidth-nameWidth-addressWidth-4)));
+    ListView_SetColumnWidth(ui.devices,2,S(ui,std::max(148,listWidth-nameWidth-addressWidth-4)));
   }
   place(ui.readKey,left,h-150,col-left-14,48);
   place(ui.fingerprint,left,h-90,col-left-14,29);
@@ -185,17 +186,40 @@ void Layout(Ui& ui){
   place(ui.status,rightX,h-76,rightWidth,52);
 }
 void Populate(Ui& ui){
-  uint64_t selected=ui.selectedAddress;
-  auto fresh=ui.scanner.Snapshot();
-  if(fresh.size()==ui.rows.size()){
-    bool identical=true;
-    for(size_t i=0;i<fresh.size();++i)
-      if(fresh[i].address!=ui.rows[i].address||fresh[i].rssi!=ui.rows[i].rssi||
-         fresh[i].name!=ui.rows[i].name||fresh[i].phoneService!=ui.rows[i].phoneService)
-        identical=false;
-    if(identical)return;
+  const bool scanning=ui.scanner.EnsureRunning();
+  const auto fresh=ui.scanner.Snapshot();
+  const std::wstring hint=!scanning?L"蓝牙扫描已中断，正在自动恢复…":
+      fresh.empty()?L"正在扫描 · 请在手机中开启蓝牙解锁服务":
+      L"已发现设备 · 暂时离线会保留 3 分钟（不参与解锁）";
+  if(GetText(ui.scanHint)!=hint)SetWindowTextW(ui.scanHint,hint.c_str());
+
+  bool sameOrder=fresh.size()==ui.rows.size();
+  if(sameOrder){
+    for(size_t i=0;i<fresh.size();++i){
+      if(fresh[i].address!=ui.rows[i].address){sameOrder=false;break;}
+    }
   }
-  ui.rows=std::move(fresh);
+  const auto strength=[](const kb::SeenDevice& item){
+    return item.fresh?std::format(L"{} dBm",item.rssi):
+       std::format(L"上次 {} dBm",item.rssi);
+  };
+  if(sameOrder){
+    for(size_t i=0;i<fresh.size();++i){
+      auto& current=ui.rows[i];
+      const auto& next=fresh[i];
+      if(next.name!=current.name)
+        ListView_SetItemText(ui.devices,static_cast<int>(i),0,const_cast<wchar_t*>(next.name.c_str()));
+      if(next.rssi!=current.rssi||next.fresh!=current.fresh){
+        auto field=strength(next);
+        ListView_SetItemText(ui.devices,static_cast<int>(i),2,field.data());
+      }
+    }
+    ui.rows=fresh;
+    return;
+  }
+
+  const auto selected=ui.selectedAddress;
+  ui.rows=fresh;
   SendMessageW(ui.devices,WM_SETREDRAW,FALSE,0);
   ListView_DeleteAllItems(ui.devices);
   for(size_t i=0;i<ui.rows.size();++i){
@@ -205,11 +229,12 @@ void Populate(Ui& ui){
     const int index=ListView_InsertItem(ui.devices,&item);
     if(index<0)continue;
     auto address=FormatAddress(row.address);
-    auto strength=std::format(L"{} dBm",row.rssi);
+    auto signal=strength(row);
     ListView_SetItemText(ui.devices,index,1,address.data());
-    ListView_SetItemText(ui.devices,index,2,strength.data());
+    ListView_SetItemText(ui.devices,index,2,signal.data());
     if(row.address==selected)
-      ListView_SetItemState(ui.devices,index,LVIS_SELECTED|LVIS_FOCUSED,LVIS_SELECTED|LVIS_FOCUSED);
+      ListView_SetItemState(ui.devices,index,LVIS_SELECTED|LVIS_FOCUSED,
+                           LVIS_SELECTED|LVIS_FOCUSED);
   }
   SendMessageW(ui.devices,WM_SETREDRAW,TRUE,0);
   InvalidateRect(ui.devices,nullptr,TRUE);
@@ -326,6 +351,7 @@ void CreateControls(Ui& ui){
     column.pszText=const_cast<wchar_t*>(headers[i]);column.cx=S(ui,i==0?260:i==1?190:130);
     ListView_InsertColumn(ui.devices,i,&column);
   }
+  ui.scanHint=Child(ui.host,L"STATIC",L"正在扫描附近的蓝牙设备…",SS_LEFT,cStatus+100);
   ui.readKey=Child(ui.host,L"BUTTON",L"读取手机公钥",BS_OWNERDRAW,cReadKey);
   ui.slider=Child(ui.host,TRACKBAR_CLASSW,L"",TBS_AUTOTICKS,cSlider);
   ui.username=Child(ui.host,L"EDIT",L"",ES_AUTOHSCROLL|WS_TABSTOP|WS_BORDER,cUser);
@@ -336,8 +362,8 @@ void CreateControls(Ui& ui){
   ui.status=Child(ui.host,L"STATIC",L"选择设备并配置 Windows 登录账户。",SS_LEFT,cStatus);
   ui.signal=Child(ui.host,L"STATIC",L"",SS_LEFT,cSignal);
   ui.fingerprint=Child(ui.host,L"STATIC",L"公钥指纹：尚未读取",SS_LEFT,cFingerprint);
-  for(HWND c:{ui.bleTab,ui.remote,ui.serviceTab,ui.high,ui.low,ui.remoteOnly,ui.devices,ui.readKey,ui.slider,ui.username,ui.domain,
-              ui.password,ui.save,ui.verified,ui.status,ui.signal,ui.fingerprint})Font(c,ui.font);
+  for(HWND c:{ui.bleTab,ui.remote,ui.serviceTab,ui.high,ui.low,ui.remoteOnly,ui.devices,ui.scanHint,ui.readKey,ui.slider,ui.username,ui.domain,
+              ui.password,ui.save,ui.verified,ui.status,ui.signal,ui.fingerprint})Font(c,c==ui.scanHint?ui.smallFont:ui.font);
   SendMessageW(ui.slider,TBM_SETRANGE,TRUE,MAKELPARAM(0,65));
   SendMessageW(ui.slider,TBM_SETPOS,TRUE,30);
   if(ui.hadConfig){
