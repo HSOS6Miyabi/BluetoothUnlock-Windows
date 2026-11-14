@@ -1,4 +1,5 @@
 #include "storage.h"
+#include "tpm_protection.h"
 #include <dpapi.h>
 #include <sddl.h>
 #include <aclapi.h>
@@ -10,7 +11,8 @@ namespace kb {
 namespace {
 constexpr uint32_t kMagic = 0x4B42554Cu; // KBUL
 constexpr uint32_t kFormat = 2;
-constexpr wchar_t kDirectory[] = L"\\Kenvix\\BluetoothUnlock";
+constexpr wchar_t kDirectory[] = L"\\BluetoothUnlock";
+constexpr wchar_t kLegacyDirectory[] = L"\\Kenvix\\BluetoothUnlock";
 constexpr wchar_t kFileName[] = L"\\configuration.dat";
 constexpr size_t kMaxConfigSize = 32768;
 void Put32(std::vector<uint8_t>& out,uint32_t value) {
@@ -50,24 +52,24 @@ std::wstring Root(){
 }
 bool SecureFolder(const std::wstring& path){
   auto root=Root(); if(root.empty())return false;
-  std::wstring parent=root+L"\\Kenvix";
   // All files are restricted to SYSTEM and local administrators.
   PSECURITY_DESCRIPTOR descriptor=nullptr;
   constexpr wchar_t sddl[]=L"O:BAG:BAD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)";
   if(!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl,SDDL_REVISION_1,&descriptor,nullptr))return false;
   SECURITY_ATTRIBUTES sa{sizeof(sa),descriptor,FALSE};
-  if(!CreateDirectoryW(parent.c_str(),&sa) && GetLastError()!=ERROR_ALREADY_EXISTS){LocalFree(descriptor);return false;}
-  if(!CreateDirectoryW(path.c_str(),&sa) && GetLastError()!=ERROR_ALREADY_EXISTS){LocalFree(descriptor);return false;}
+   if(!CreateDirectoryW(path.c_str(),&sa) && GetLastError()!=ERROR_ALREADY_EXISTS){LocalFree(descriptor);return false;}
   PACL acl=nullptr; BOOL present=FALSE,defaulted=FALSE;
   bool ok=GetSecurityDescriptorDacl(descriptor,&present,&acl,&defaulted)&&present&&acl;
-  if(ok){
-    ok=SetNamedSecurityInfoW(const_cast<LPWSTR>(parent.c_str()),SE_FILE_OBJECT,DACL_SECURITY_INFORMATION|PROTECTED_DACL_SECURITY_INFORMATION,nullptr,nullptr,acl,nullptr)==ERROR_SUCCESS;
-    ok=ok&&SetNamedSecurityInfoW(const_cast<LPWSTR>(path.c_str()),SE_FILE_OBJECT,DACL_SECURITY_INFORMATION|PROTECTED_DACL_SECURITY_INFORMATION,nullptr,nullptr,acl,nullptr)==ERROR_SUCCESS;
-  }
+  if(ok)
+    ok=SetNamedSecurityInfoW(const_cast<LPWSTR>(path.c_str()),SE_FILE_OBJECT,
+      DACL_SECURITY_INFORMATION|PROTECTED_DACL_SECURITY_INFORMATION,
+      nullptr,nullptr,acl,nullptr)==ERROR_SUCCESS;
   LocalFree(descriptor);return ok;
 }
 } // namespace
 std::wstring ConfigurationPath(){auto root=Root();return root.empty()?std::wstring{}:root+kDirectory+kFileName;}
+std::wstring LegacyConfigurationPath(){auto root=Root();return root.empty()?std::wstring{}:root+kLegacyDirectory+kFileName;}
+bool EnsureConfigurationDirectory(){auto root=Root();return !root.empty()&&SecureFolder(root+kDirectory);}
 void Wipe(std::wstring& s){
   if(!s.empty())SecureZeroMemory(s.data(),s.size()*sizeof(wchar_t));s.clear();
 }
@@ -76,16 +78,24 @@ bool EncryptPassword(const std::wstring& plain,std::vector<uint8_t>& encrypted){
   DATA_BLOB input{static_cast<DWORD>((plain.size()+1)*sizeof(wchar_t)),
     reinterpret_cast<BYTE*>(const_cast<wchar_t*>(plain.c_str()))};
   DATA_BLOB output{};
-  if(!CryptProtectData(&input,L"Kenvix Bluetooth Unlock",nullptr,nullptr,nullptr,
+  if(!CryptProtectData(&input,L"Bluetooth Unlock",nullptr,nullptr,nullptr,
        CRYPTPROTECT_LOCAL_MACHINE|CRYPTPROTECT_UI_FORBIDDEN,&output)) return false;
-  encrypted.assign(output.pbData,output.pbData+output.cbData);
-  SecureZeroMemory(output.pbData,output.cbData);LocalFree(output.pbData);return true;
+  std::vector<uint8_t> dpapi(output.pbData,output.pbData+output.cbData);
+  SecureZeroMemory(output.pbData,output.cbData);LocalFree(output.pbData);
+  if(!ProtectWithTpm(dpapi,encrypted)) encrypted=dpapi;
+  if(!dpapi.empty())SecureZeroMemory(dpapi.data(),dpapi.size());
+  return true;
 }
 bool DecryptPassword(const std::vector<uint8_t>& encrypted,std::wstring& plain){
   plain.clear();if(encrypted.empty()||encrypted.size()>kMaxConfigSize)return false;
-  DATA_BLOB in{static_cast<DWORD>(encrypted.size()),const_cast<BYTE*>(encrypted.data())},out{};
-  if(!CryptUnprotectData(&in,nullptr,nullptr,nullptr,nullptr,
-       CRYPTPROTECT_UI_FORBIDDEN,&out))return false;
+  std::vector<uint8_t> unsealed;
+  if(IsTpmProtected(encrypted)&&!UnprotectWithTpm(encrypted,unsealed))return false;
+  const auto& cipher=IsTpmProtected(encrypted)?unsealed:encrypted;
+  DATA_BLOB in{static_cast<DWORD>(cipher.size()),const_cast<BYTE*>(cipher.data())},out{};
+  const bool decrypted=CryptUnprotectData(&in,nullptr,nullptr,nullptr,nullptr,
+       CRYPTPROTECT_UI_FORBIDDEN,&out)!=0;
+  if(!unsealed.empty())SecureZeroMemory(unsealed.data(),unsealed.size());
+  if(!decrypted)return false;
   bool good=out.cbData>=sizeof(wchar_t)&&out.cbData%sizeof(wchar_t)==0&&out.cbData<=4096;
   if(good){
     auto count=out.cbData/sizeof(wchar_t);
@@ -116,6 +126,10 @@ bool ValidatePassword(const std::wstring& user,const std::wstring& domain,const 
 bool ReadConfig(Configuration& out){
   auto path=ConfigurationPath();if(path.empty())return false;
   HANDLE handle=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+  if(handle==INVALID_HANDLE_VALUE&&GetLastError()==ERROR_FILE_NOT_FOUND){
+    path=LegacyConfigurationPath();
+    handle=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+  }
   if(handle==INVALID_HANDLE_VALUE)return false;
   LARGE_INTEGER bytes{}; bool ok=GetFileSizeEx(handle,&bytes)&&bytes.QuadPart>0&&bytes.QuadPart<=kMaxConfigSize;
   std::vector<uint8_t> file;
@@ -143,9 +157,7 @@ bool SaveConfig(const Configuration& cfg){
      (cfg.mode!=Mode::low&&cfg.mode!=Mode::high&&cfg.mode!=Mode::remote)||
      (cfg.mode==Mode::high&&!kenvix::ValidPublicKey(cfg.trustedKey))||
      (cfg.mode==Mode::low&&cfg.lowAddress==0))return false;
-  auto root=Root();if(root.empty())return false;
-  const auto directory=root+kDirectory;
-  if(!SecureFolder(directory))return false;
+  if(!EnsureConfigurationDirectory())return false;
   std::vector<uint8_t> data;
   Put32(data,kMagic);Put32(data,kFormat);Put32(data,static_cast<uint32_t>(cfg.mode));
   Put32(data,static_cast<uint32_t>(cfg.minRssi));Put64(data,cfg.lowAddress);

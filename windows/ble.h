@@ -9,6 +9,7 @@
 namespace kb {
 struct SeenDevice {
   uint64_t address{};
+  std::wstring name;
   int rssi{-127};
   unsigned observations{};
   bool phoneService{};

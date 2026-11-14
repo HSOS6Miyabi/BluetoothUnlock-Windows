@@ -1,6 +1,7 @@
 #include "ble.h"
 #include "security.h"
 #include "storage.h"
+#include "tpm_protection.h"
 #include "remote_settings.h"
 #include "service_manager.h"
 #include "service_settings.h"
@@ -9,6 +10,7 @@
 #include <shellapi.h>
 #include <commctrl.h>
 #include <dwmapi.h>
+#include <uxtheme.h>
 #include <winrt/base.h>
 #include <algorithm>
 #include <array>
@@ -72,6 +74,14 @@ void Appearance(Ui& ui){
   if(ui.editBrush)DeleteObject(ui.editBrush);
   if(ui.panelBrush)DeleteObject(ui.panelBrush);
   ui.editBrush=CreateSolidBrush(kEdit);ui.panelBrush=CreateSolidBrush(kPanel);
+  if(ui.devices){
+    ListView_SetBkColor(ui.devices,kEdit);
+    ListView_SetTextBkColor(ui.devices,kEdit);
+    ListView_SetTextColor(ui.devices,kText);
+    SetWindowTheme(ui.devices,ui.palette.dark?L"DarkMode_Explorer":L"Explorer",nullptr);
+    auto header=ListView_GetHeader(ui.devices);
+    if(header)SendMessageW(header,WM_SETFONT,reinterpret_cast<WPARAM>(normal),TRUE);
+  }
   if(ui.host){kb::ui::Titlebar(ui.host,ui.palette.dark);InvalidateRect(ui.host,nullptr,TRUE);}
   if(ui.remotePage)SendMessageW(ui.remotePage,kb::kRemotePageAppearance,ui.dpi,0);
   if(ui.servicePage)SendMessageW(ui.servicePage,kb::kServicePageAppearance,ui.dpi,0);
@@ -94,7 +104,10 @@ void FillRound(HDC dc,RECT rect,COLORREF background,int radius=20){
   SelectObject(dc,oldBrush);SelectObject(dc,oldPen);DeleteObject(brush);DeleteObject(pen);
 }
 std::wstring FormatAddress(uint64_t addr){
-  wchar_t buf[25]{};swprintf_s(buf,L"%012llX",static_cast<unsigned long long>(addr));
+  wchar_t buf[25]{};
+  swprintf_s(buf,L"%02llX:%02llX:%02llX:%02llX:%02llX:%02llX",
+     (addr>>40)&0xffull,(addr>>32)&0xffull,(addr>>24)&0xffull,
+     (addr>>16)&0xffull,(addr>>8)&0xffull,addr&0xffull);
   return buf;
 }
 void SetState(Ui& ui,const std::wstring& message){SetWindowTextW(ui.status,message.c_str());}
@@ -130,10 +143,13 @@ void SetPage(Ui& ui,int page){
   InvalidateRect(ui.host,nullptr,TRUE);
 }
 
+int LeftPanelWidth(int width){
+  return std::clamp(static_cast<int>(width*0.57),580,std::max(580,width-465));
+}
 void Layout(Ui& ui){
   RECT physical{};GetClientRect(ui.host,&physical);
   const int w=MulDiv(physical.right,96,ui.dpi),h=MulDiv(physical.bottom,96,ui.dpi);
-  const int col=std::max(415,static_cast<int>(w*0.43));
+  const int col=LeftPanelWidth(w);
   const int rightX=col+34,rightWidth=std::max(385,w-rightX-38);
   auto place=[&](HWND child,int x,int y,int width,int height){
     if(child)Place(child,S(ui,x),S(ui,y),S(ui,width),S(ui,height));
@@ -148,7 +164,15 @@ void Layout(Ui& ui){
   place(ui.high,left,212,segment,52);
   place(ui.low,left+segment+10,212,segment,52);
   place(ui.remoteOnly,left+(segment+10)*2,212,segment,52);
-  place(ui.devices,left,333,col-left-14,std::max(190,h-333-165));
+  const int listWidth=col-left-14;
+  place(ui.devices,left,333,listWidth,std::max(190,h-333-165));
+  if(ui.devices){
+    const int nameWidth=std::max(250,static_cast<int>(listWidth*0.45));
+    const int addressWidth=std::max(185,static_cast<int>(listWidth*0.32));
+    ListView_SetColumnWidth(ui.devices,0,S(ui,nameWidth));
+    ListView_SetColumnWidth(ui.devices,1,S(ui,addressWidth));
+    ListView_SetColumnWidth(ui.devices,2,S(ui,std::max(120,listWidth-nameWidth-addressWidth-4)));
+  }
   place(ui.readKey,left,h-150,col-left-14,48);
   place(ui.fingerprint,left,h-90,col-left-14,29);
   place(ui.verified,left,h-53,col-left-14,35);
@@ -166,19 +190,29 @@ void Populate(Ui& ui){
   if(fresh.size()==ui.rows.size()){
     bool identical=true;
     for(size_t i=0;i<fresh.size();++i)
-      if(fresh[i].address!=ui.rows[i].address||fresh[i].rssi!=ui.rows[i].rssi)identical=false;
+      if(fresh[i].address!=ui.rows[i].address||fresh[i].rssi!=ui.rows[i].rssi||
+         fresh[i].name!=ui.rows[i].name||fresh[i].phoneService!=ui.rows[i].phoneService)
+        identical=false;
     if(identical)return;
   }
   ui.rows=std::move(fresh);
-  SendMessageW(ui.devices,WM_SETREDRAW,FALSE,0);SendMessageW(ui.devices,LB_RESETCONTENT,0,0);
+  SendMessageW(ui.devices,WM_SETREDRAW,FALSE,0);
+  ListView_DeleteAllItems(ui.devices);
   for(size_t i=0;i<ui.rows.size();++i){
     const auto& row=ui.rows[i];
-    auto s=std::format(L"{}   {}    {} dBm",row.phoneService?L"Android 手机":L"蓝牙设备",
-                       FormatAddress(row.address),row.rssi);
-    SendMessageW(ui.devices,LB_ADDSTRING,0,reinterpret_cast<LPARAM>(s.c_str()));
-    if(row.address==selected)SendMessageW(ui.devices,LB_SETCURSEL,i,0);
+    LVITEMW item{};item.mask=LVIF_TEXT;item.iItem=static_cast<int>(i);
+    item.pszText=const_cast<wchar_t*>(row.name.c_str());
+    const int index=ListView_InsertItem(ui.devices,&item);
+    if(index<0)continue;
+    auto address=FormatAddress(row.address);
+    auto strength=std::format(L"{} dBm",row.rssi);
+    ListView_SetItemText(ui.devices,index,1,address.data());
+    ListView_SetItemText(ui.devices,index,2,strength.data());
+    if(row.address==selected)
+      ListView_SetItemState(ui.devices,index,LVIS_SELECTED|LVIS_FOCUSED,LVIS_SELECTED|LVIS_FOCUSED);
   }
-  SendMessageW(ui.devices,WM_SETREDRAW,TRUE,0);InvalidateRect(ui.devices,nullptr,TRUE);
+  SendMessageW(ui.devices,WM_SETREDRAW,TRUE,0);
+  InvalidateRect(ui.devices,nullptr,TRUE);
 }
 void Save(Ui& ui){
   if(ui.busy)return;
@@ -233,12 +267,26 @@ void Save(Ui& ui){
       result->message=L"无法找到这个 Windows 登录账户，请检查账户名和域名。";
     else if(!password.empty()&&!kb::ValidatePassword(cfg.username,cfg.domain,password))
       result->message=L"Windows 账户密码验证失败，请检查登录密码。";
-    else if(!password.empty()&&!kb::EncryptPassword(password,cfg.passwordEncrypted))
-      result->message=L"无法加密 Windows 账户密码。";
-    else if(kb::SaveConfig(cfg)){
-      result->ok=true;result->saved=std::move(cfg);
-      result->message=L"配置保存成功。按 Win + L 可检查所选解锁方式。";
-    }else result->message=L"无法保存配置。请确认已使用管理员权限打开设置程序。";
+    else {
+      if(password.empty()&&!kb::IsTpmProtected(cfg.passwordEncrypted)){
+        std::wstring previous;
+        if(kb::DecryptPassword(cfg.passwordEncrypted,previous)){
+          std::vector<uint8_t> wrapped;
+          if(kb::EncryptPassword(previous,wrapped)&&kb::IsTpmProtected(wrapped))
+            cfg.passwordEncrypted=std::move(wrapped);
+          kb::Wipe(previous);
+        }
+      }
+      if(!password.empty()&&!kb::EncryptPassword(password,cfg.passwordEncrypted))
+        result->message=L"无法加密 Windows 账户密码。";
+      else if(kb::SaveConfig(cfg)){
+        const bool protectedByTpm=kb::IsTpmProtected(cfg.passwordEncrypted);
+        result->ok=true;result->saved=std::move(cfg);
+        result->message=protectedByTpm?
+          L"已保存，账户凭据由 TPM 硬件密钥和 Windows DPAPI 共同保护。":
+          L"已保存，账户凭据由 Windows DPAPI 保护。";
+      }else result->message=L"无法保存配置。请确认已使用管理员权限打开设置程序。";
+    }
     kb::Wipe(password);
     if(!PostMessageW(host,msgSave,0,reinterpret_cast<LPARAM>(result)))delete result;
   });
@@ -268,7 +316,16 @@ void CreateControls(Ui& ui){
   ui.high=Child(ui.host,L"BUTTON",L"手机验证",BS_OWNERDRAW,cHigh);
   ui.low=Child(ui.host,L"BUTTON",L"手环检测",BS_OWNERDRAW,cLow);
   ui.remoteOnly=Child(ui.host,L"BUTTON",L"仅 RustDesk",BS_OWNERDRAW,cOnlyRemote);
-  ui.devices=Child(ui.host,L"LISTBOX",L"",WS_VSCROLL|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT|WS_BORDER,cDevices);
+  ui.devices=Child(ui.host,WC_LISTVIEWW,L"",
+      LVS_REPORT|LVS_SINGLESEL|LVS_SHOWSELALWAYS|LVS_NOSORTHEADER|WS_BORDER|WS_TABSTOP,cDevices);
+  ListView_SetExtendedListViewStyle(ui.devices,LVS_EX_FULLROWSELECT|LVS_EX_DOUBLEBUFFER|LVS_EX_LABELTIP);
+  const wchar_t* headers[]={L"设备名称",L"MAC 地址",L"信号强度"};
+  for(int i=0;i<3;i++){
+    LVCOLUMNW column{};column.mask=LVCF_TEXT|LVCF_WIDTH|LVCF_FMT;
+    column.fmt=i==2?LVCFMT_RIGHT:LVCFMT_LEFT;
+    column.pszText=const_cast<wchar_t*>(headers[i]);column.cx=S(ui,i==0?260:i==1?190:130);
+    ListView_InsertColumn(ui.devices,i,&column);
+  }
   ui.readKey=Child(ui.host,L"BUTTON",L"读取手机公钥",BS_OWNERDRAW,cReadKey);
   ui.slider=Child(ui.host,TRACKBAR_CLASSW,L"",TBS_AUTOTICKS,cSlider);
   ui.username=Child(ui.host,L"EDIT",L"",ES_AUTOHSCROLL|WS_TABSTOP|WS_BORDER,cUser);
@@ -299,6 +356,7 @@ void CreateControls(Ui& ui){
   UpdateModeControls(ui);
   ui.remotePage=kb::CreateRemoteSettingsPage(ui.host);
   ui.servicePage=kb::CreateServiceSettingsPage(ui.host);
+  Appearance(ui);
   RefreshLabels(ui);Layout(ui);
   SetPage(ui,0);
 }
@@ -307,14 +365,13 @@ void Paint(HWND hwnd,Ui& ui){
   RECT screen{};GetClientRect(hwnd,&screen);
   HBRUSH bg=CreateSolidBrush(kBackground);FillRect(dc,&screen,bg);DeleteObject(bg);
   const int w=MulDiv(screen.right,96,ui.dpi),h=MulDiv(screen.bottom,96,ui.dpi);
-  Text(dc,S(ui,28),S(ui,26),L"Kenvix",kAccent,ui.heading);
-  Text(dc,S(ui,157),S(ui,26),L"Bluetooth Unlock",kText,ui.heading);
+  Text(dc,S(ui,28),S(ui,26),L"Bluetooth Unlock",kText,ui.heading);
   Text(dc,S(ui,29),S(ui,81),L"让经过授权的设备和远程连接安全地唤醒 Windows 登录会话",kMuted,ui.font);
   HPEN divider=CreatePen(PS_SOLID,1,kBorder);auto old=SelectObject(dc,divider);
   MoveToEx(dc,S(ui,25),S(ui,176),nullptr);LineTo(dc,S(ui,w-25),S(ui,176));
   SelectObject(dc,old);DeleteObject(divider);
   if(ui.activePage==0){
-    const int col=std::max(415,static_cast<int>(w*0.43)),rightX=col+34;
+    const int col=LeftPanelWidth(w),rightX=col+34;
     kb::ui::Rounded(dc,{S(ui,24),S(ui,193),S(ui,col+2),S(ui,h-19)},kPanel,S(ui,21));
     kb::ui::Rounded(dc,{S(ui,col+18),S(ui,193),S(ui,w-24),S(ui,h-19)},kPanel,S(ui,21));
     Text(dc,S(ui,42),S(ui,285),L"附近的蓝牙设备",kText,ui.font);
@@ -323,7 +380,12 @@ void Paint(HWND hwnd,Ui& ui){
     const int rightWidth=std::max(385,w-rightX-38);
     Text(dc,S(ui,rightX+(rightWidth-16)/2+16),S(ui,370),L"计算机名或域名",kMuted,ui.smallFont);
     Text(dc,S(ui,rightX),S(ui,469),L"Windows 账户密码（已保存且账户未变更时可以留空）",kMuted,ui.smallFont);
-    Text(dc,S(ui,rightX),S(ui,h-190),L"保存后，Windows 原有的登录方式将继续保留。",kMuted,ui.smallFont);
+    const wchar_t* protection=ui.hadConfig?
+      (kb::IsTpmProtected(ui.config.passwordEncrypted)?
+        L"凭据保护：TPM 硬件密钥 + Windows DPAPI":
+        L"凭据保护：Windows DPAPI"):
+      L"保存后将自动选择可用的凭据保护方式";
+    Text(dc,S(ui,rightX),S(ui,h-190),protection,kMuted,ui.smallFont);
   }
   EndPaint(hwnd,&ps);
 }
@@ -359,7 +421,7 @@ LRESULT CALLBACK WndProc(HWND hwnd,UINT msg,WPARAM w,LPARAM l){
     case WM_GETMINMAXINFO:{
       auto* mm=reinterpret_cast<MINMAXINFO*>(l);
       const UINT dpi=ui?ui->dpi:kb::ui::Dpi(hwnd);
-      mm->ptMinTrackSize={kb::ui::Scale(dpi,950),kb::ui::Scale(dpi,790)};return 0;
+      mm->ptMinTrackSize={kb::ui::Scale(dpi,1080),kb::ui::Scale(dpi,790)};return 0;
     }
     case WM_SIZE:if(ui){Layout(*ui);InvalidateRect(hwnd,nullptr,TRUE);}return 0;
     case WM_DPICHANGED:if(ui){
@@ -377,28 +439,34 @@ LRESULT CALLBACK WndProc(HWND hwnd,UINT msg,WPARAM w,LPARAM l){
     case WM_TIMER:if(ui&&w==1){Populate(*ui);}return 0;
     case WM_HSCROLL:if(ui&&reinterpret_cast<HWND>(l)==ui->slider){RefreshLabels(*ui);return 0;}break;
     case WM_COMMAND:if(ui){
-      const auto id=LOWORD(w),code=HIWORD(w);
+      const auto id=LOWORD(w);
       if(id==cHigh||id==cLow||id==cOnlyRemote){
         ui->selectedMode=id==cHigh?kb::Mode::high:id==cLow?kb::Mode::low:kb::Mode::remote;
         for(HWND control:{ui->high,ui->low,ui->remoteOnly})InvalidateRect(control,nullptr,TRUE);
         UpdateModeControls(*ui);return 0;
-      }
-      if(id==cDevices&&code==LBN_SELCHANGE){
-        int index=static_cast<int>(SendMessageW(ui->devices,LB_GETCURSEL,0,0));
-        if(index>=0&&static_cast<size_t>(index)<ui->rows.size()){
-          const auto addr=ui->rows[index].address;
-          if(addr!=ui->selectedAddress){
-            ui->selectedAddress=addr;ui->keyAddress=0;ui->key={};
-            SetWindowTextW(ui->fingerprint,L"公钥指纹：尚未读取");
-            SendMessageW(ui->verified,BM_SETCHECK,BST_UNCHECKED,0);
-          }
-        }return 0;
       }
       if(id==cRemote||id==cBleTab||id==cServiceTab){
         SetPage(*ui,id==cRemote?1:id==cServiceTab?2:0);return 0;
       }
       if(id==cReadKey){ReadKey(*ui);return 0;}
       if(id==cSave){Save(*ui);return 0;}
+    }break;
+    case WM_NOTIFY:if(ui){
+      auto* notification=reinterpret_cast<NMHDR*>(l);
+      if(notification&&notification->idFrom==cDevices&&notification->code==LVN_ITEMCHANGED){
+        const auto* change=reinterpret_cast<const NMLISTVIEW*>(l);
+        if((change->uChanged&LVIF_STATE)&&!(change->uOldState&LVIS_SELECTED)&&
+           (change->uNewState&LVIS_SELECTED)&&change->iItem>=0&&
+           static_cast<size_t>(change->iItem)<ui->rows.size()){
+          const auto addr=ui->rows[change->iItem].address;
+          if(addr!=ui->selectedAddress){
+            ui->selectedAddress=addr;ui->keyAddress=0;ui->key={};
+            SetWindowTextW(ui->fingerprint,L"公钥指纹：尚未读取");
+            SendMessageW(ui->verified,BM_SETCHECK,BST_UNCHECKED,0);
+          }
+        }
+        return 0;
+      }
     }break;
     case msgKey:if(ui){
       std::unique_ptr<KeyResult> result(reinterpret_cast<KeyResult*>(l));
@@ -484,22 +552,22 @@ int APIENTRY wWinMain(HINSTANCE inst,HINSTANCE,LPWSTR,int show){
       if(!Elevated())return RelaunchElevated(arg.c_str(),true);
       std::wstring result;
       const bool ok=arg==L"--install"?kb::InstallApplication(result):kb::UninstallApplication(arg==L"--uninstall-keep-settings",result);
-      MessageBoxW(nullptr,result.c_str(),L"Kenvix Bluetooth Unlock",
+      MessageBoxW(nullptr,result.c_str(),L"Bluetooth Unlock",
           MB_OK|(ok?MB_ICONINFORMATION:MB_ICONERROR));
       return ok?0:1;
     }
   }else if(argv)LocalFree(argv);
   if(!Elevated())return RelaunchElevated(L"--settings",false);
   winrt::init_apartment(winrt::apartment_type::single_threaded);
-  INITCOMMONCONTROLSEX common{sizeof(common),ICC_BAR_CLASSES|ICC_STANDARD_CLASSES};
+  INITCOMMONCONTROLSEX common{sizeof(common),ICC_BAR_CLASSES|ICC_STANDARD_CLASSES|ICC_LISTVIEW_CLASSES};
   InitCommonControlsEx(&common);
   WNDCLASSEXW cls{sizeof(cls)};
-  cls.hInstance=inst;cls.lpfnWndProc=WndProc;cls.lpszClassName=L"KenvixBluetoothUnlockSettings";
+  cls.hInstance=inst;cls.lpfnWndProc=WndProc;cls.lpszClassName=L"BluetoothUnlockSettings";
   cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);
   cls.hbrBackground=reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH));
   if(!RegisterClassExW(&cls))return 1;
   const UINT dpi=kb::ui::Dpi(nullptr);
-  HWND window=CreateWindowExW(0,cls.lpszClassName,L"Kenvix Bluetooth Unlock · 设置",
+  HWND window=CreateWindowExW(0,cls.lpszClassName,L"Bluetooth Unlock · 设置",
                    WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,
                    kb::ui::Scale(dpi,1120),kb::ui::Scale(dpi,860),
                    nullptr,nullptr,inst,nullptr);

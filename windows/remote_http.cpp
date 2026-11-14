@@ -47,7 +47,7 @@ bool Open(const RemoteConfiguration& config,Endpoint& endpoint,
         error=L"无法读取加密 API Key。";return false;
     }
     for(auto c:key)if(c<33||c>126){Wipe(key);error=L"API Key 格式无效。";return false;}
-    session=std::make_unique<HttpHandle>(WinHttpOpen(L"KenvixUnlock/1.1",
+    session=std::make_unique<HttpHandle>(WinHttpOpen(L"BluetoothUnlock/1.2",
         WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0));
     if(!*session){Wipe(key);error=L"无法初始化 WinHTTP。";return false;}
     WinHttpSetTimeouts(*session,8000,8000,8000,35000);

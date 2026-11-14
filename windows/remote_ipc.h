@@ -2,9 +2,9 @@
 #include <windows.h>
 #include <cstdint>
 namespace kb {
-inline constexpr wchar_t kRemoteGrantName[]=L"Global\\KenvixRustDeskUnlockGrantV1_8F21";
-inline constexpr wchar_t kRemoteGrantChangedEvent[]=L"Global\\KenvixRustDeskUnlockNotifyV1_8F21";
-inline constexpr wchar_t kRemoteConfigurationChangedEvent[]=L"Global\\KenvixRustDeskUnlockConfigV1_8F21";
+inline constexpr wchar_t kRemoteGrantName[]=L"Global\\BluetoothUnlockGrantV1_8F21";
+inline constexpr wchar_t kRemoteGrantChangedEvent[]=L"Global\\BluetoothUnlockNotifyV1_8F21";
+inline constexpr wchar_t kRemoteConfigurationChangedEvent[]=L"Global\\BluetoothUnlockConfigV1_8F21";
 class RemoteGrant {
 public:
     explicit RemoteGrant(bool owner);

@@ -78,7 +78,7 @@ bool ReadKey(PhoneGatt& gatt,kenvix::PublicKey& key){
 }
 } // namespace
 struct BleScanner::Impl {
-  struct Sample {int rssi{-127};unsigned observations{};bool phone{};
+  struct Sample {std::wstring name;int rssi{-127};unsigned observations{};bool phone{};
     std::chrono::steady_clock::time_point last{};};
   struct State {std::mutex mutex;std::unordered_map<uint64_t,Sample> samples;};
   std::shared_ptr<State> state=std::make_shared<State>();
@@ -98,6 +98,11 @@ void BleScanner::Start(){
     auto state=weak.lock();if(!state)return;
     const int rssi=args.RawSignalStrengthInDBm();
     if(rssi<=-127||rssi>-15)return;
+    auto name=std::wstring(args.Advertisement().LocalName().c_str());
+    name.erase(std::remove_if(name.begin(),name.end(),[](wchar_t ch){return ch < 0x20 || ch==0x7f ||
+        (ch>=0x202a&&ch<=0x202e) || (ch>=0x2066&&ch<=0x2069);}),name.end());
+    if(name.size()>128)name.resize(128);
+    if(name.find_first_not_of(L" ")==std::wstring::npos)name.clear();
     bool phone=false;
     for(auto const& uuid:args.Advertisement().ServiceUuids()){
       if(uuid==serviceId){phone=true;break;}
@@ -113,6 +118,7 @@ void BleScanner::Start(){
     if(now-sample.last>4s)sample.observations=0;
     sample.observations=std::min(10u,sample.observations+1);
     sample.rssi=rssi;sample.phone=sample.phone||phone;
+    if(!name.empty())sample.name=std::move(name);
     sample.last=now;
     } catch(...) { /* Fail closed if a Bluetooth event cannot be read. */ }
   });
@@ -134,7 +140,7 @@ std::vector<SeenDevice> BleScanner::Snapshot() const {
   const auto now=std::chrono::steady_clock::now();
   for(auto const& [address,s]:state.samples){
     const auto fresh=now-s.last<=4s;
-    if(fresh)result.push_back({address,s.rssi,s.observations,s.phone,fresh});
+    if(fresh&&!s.name.empty())result.push_back({address,s.name,s.rssi,s.observations,s.phone,fresh});
   }
   std::sort(result.begin(),result.end(),[](const SeenDevice&a,const SeenDevice&b){
     if(a.phoneService!=b.phoneService)return a.phoneService>b.phoneService;return a.rssi>b.rssi;});

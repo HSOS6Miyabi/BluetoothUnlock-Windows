@@ -7,7 +7,7 @@
 - 已部署支持 `connection.authenticated` 和 `connection.ended` 事件的 RustDesk API 服务器。
 - 服务器通过有效的 HTTPS 证书提供访问。Windows 使用 WinHTTP 验证服务器证书，并禁止重定向 SSE 请求。
 - RustDesk 客户端向 API 服务正常提交连接审计信息。仅连接服务器但没有审计上报时，Windows 无法收到相应事件。
-- Windows 10/11 x64、已安装本项目 Credential Provider 和 `KenvixRustDeskUnlock` 系统服务。
+- Windows 10/11 x64、已安装本项目 Credential Provider 和 `BluetoothUnlockService` 系统服务。
 - Windows 登录账户有可验证的账户密码。本功能目前支持传统 Windows 本地账户和 Active Directory 域账户。
 
 ## 一、生成 SSE API Key
@@ -25,11 +25,11 @@ Authorization: Bearer rdapi_你的密钥
 Accept: text/event-stream
 ```
 
-API Key 只保存在本机受限制的配置目录中，并使用 Windows DPAPI 加密。程序不会将密钥附加到 URL 中。
+API Key 保存在本机访问受限的配置目录，使用 Windows DPAPI 加密；TPM 可用时增加 TPM 密钥保护。程序不会将密钥附加到 URL 中。
 
 ## 二、设置 Windows 端
 
-1. 以管理员身份打开 `KenvixBluetoothUnlock.exe`。
+1. 以管理员身份打开 `BluetoothUnlock.exe`。
 2. 选择 **仅 RustDesk**、**手机验证** 或 **手环检测**。若只需 RustDesk 解锁，可以选择 **仅 RustDesk**，电脑不必安装蓝牙适配器。
 3. 输入 Windows 账户名、计算机名或域名、账户密码并保存。密码经过本机验证后加密保存。
 4. 点击窗口顶部的 **RustDesk API** 页面。
@@ -45,7 +45,7 @@ API Key 只保存在本机受限制的配置目录中，并使用 Windows DPAPI 
 
 点击 **测试 SSE 连接** 可以验证服务器地址、TLS 证书及 API Key 是否有效。测试操作会建立一次 SSE 订阅并检查 HTTP 状态，不会发送远程连接事件或触发解锁。
 
-保存 RustDesk 设置后，Windows 后台服务会重新读取配置。若服务尚未安装，可在 RustDesk 页面点击 **安装或修复后台服务**。服务已安装但停止时，可在管理员 PowerShell 中执行 `Start-Service KenvixRustDeskUnlock`。
+保存 RustDesk 设置后，Windows 后台服务会重新读取配置。若服务尚未安装，请在 **服务管理** 页面点击 **安装服务与登录组件**。服务已安装但停止时，可在管理员 PowerShell 中执行 `Start-Service BluetoothUnlockService`。
 
 ## 三、解锁和自动锁定
 
@@ -97,12 +97,12 @@ API Key 只保存在本机受限制的配置目录中，并使用 Windows DPAPI 
 | 能测试连接但无法解锁 | 检查本设备 RustDesk ID、连接方限制、服务器是否确实发送 `connection.authenticated`，以及目标 Windows 会话是否锁定 |
 | 连接结束但没有锁定 | 检查服务是否运行、是否开启自动锁定、是否仍有其他已认证连接，以及服务器是否上报 `connection.ended` |
 | 更换 Windows 账户密码后失败 | 重新运行主设置程序，输入新密码并保存 |
-| 禁用后仍保持 SSE 连接 | 确认设置已经保存，检查 `KenvixRustDeskUnlock` 服务状态并重新启动服务 |
+| 禁用后仍保持 SSE 连接 | 确认设置已经保存，检查 `BluetoothUnlockService` 服务状态并重新启动服务 |
 
 在管理员 PowerShell 中执行以下命令查看服务状态：
 
 ```powershell
-Get-Service KenvixRustDeskUnlock
+Get-Service BluetoothUnlockService
 ```
 
 如需检查系统当前的 WinHTTP 代理设置：

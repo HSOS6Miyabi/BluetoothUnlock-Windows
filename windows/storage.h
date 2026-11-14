@@ -18,6 +18,8 @@ struct Configuration {
   std::vector<uint8_t> passwordEncrypted;
 };
 std::wstring ConfigurationPath();
+std::wstring LegacyConfigurationPath();
+bool EnsureConfigurationDirectory();
 bool ReadConfig(Configuration& result);
 bool SaveConfig(const Configuration& value);
 bool EncryptPassword(const std::wstring& plain, std::vector<uint8_t>& encrypted);
