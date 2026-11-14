@@ -1,6 +1,7 @@
 #include "ble.h"
 #include "security.h"
 #include "storage.h"
+#include "tpm_protection.h"
 #include "remote_settings.h"
 #include "service_manager.h"
 #include "service_settings.h"
@@ -266,12 +267,26 @@ void Save(Ui& ui){
       result->message=L"无法找到这个 Windows 登录账户，请检查账户名和域名。";
     else if(!password.empty()&&!kb::ValidatePassword(cfg.username,cfg.domain,password))
       result->message=L"Windows 账户密码验证失败，请检查登录密码。";
-    else if(!password.empty()&&!kb::EncryptPassword(password,cfg.passwordEncrypted))
-      result->message=L"无法加密 Windows 账户密码。";
-    else if(kb::SaveConfig(cfg)){
-      result->ok=true;result->saved=std::move(cfg);
-      result->message=L"配置保存成功。按 Win + L 可检查所选解锁方式。";
-    }else result->message=L"无法保存配置。请确认已使用管理员权限打开设置程序。";
+    else {
+      if(password.empty()&&!kb::IsTpmProtected(cfg.passwordEncrypted)){
+        std::wstring previous;
+        if(kb::DecryptPassword(cfg.passwordEncrypted,previous)){
+          std::vector<uint8_t> wrapped;
+          if(kb::EncryptPassword(previous,wrapped)&&kb::IsTpmProtected(wrapped))
+            cfg.passwordEncrypted=std::move(wrapped);
+          kb::Wipe(previous);
+        }
+      }
+      if(!password.empty()&&!kb::EncryptPassword(password,cfg.passwordEncrypted))
+        result->message=L"无法加密 Windows 账户密码。";
+      else if(kb::SaveConfig(cfg)){
+        const bool protectedByTpm=kb::IsTpmProtected(cfg.passwordEncrypted);
+        result->ok=true;result->saved=std::move(cfg);
+        result->message=protectedByTpm?
+          L"已保存，账户凭据由 TPM 硬件密钥和 Windows DPAPI 共同保护。":
+          L"已保存，账户凭据由 Windows DPAPI 保护。";
+      }else result->message=L"无法保存配置。请确认已使用管理员权限打开设置程序。";
+    }
     kb::Wipe(password);
     if(!PostMessageW(host,msgSave,0,reinterpret_cast<LPARAM>(result)))delete result;
   });
@@ -364,7 +379,12 @@ void Paint(HWND hwnd,Ui& ui){
     const int rightWidth=std::max(385,w-rightX-38);
     Text(dc,S(ui,rightX+(rightWidth-16)/2+16),S(ui,370),L"计算机名或域名",kMuted,ui.smallFont);
     Text(dc,S(ui,rightX),S(ui,469),L"Windows 账户密码（已保存且账户未变更时可以留空）",kMuted,ui.smallFont);
-    Text(dc,S(ui,rightX),S(ui,h-190),L"保存后，Windows 原有的登录方式将继续保留。",kMuted,ui.smallFont);
+    const wchar_t* protection=ui.hadConfig?
+      (kb::IsTpmProtected(ui.config.passwordEncrypted)?
+        L"凭据保护：TPM 硬件密钥 + Windows DPAPI":
+        L"凭据保护：Windows DPAPI"):
+      L"保存后将自动选择可用的凭据保护方式";
+    Text(dc,S(ui,rightX),S(ui,h-190),protection,kMuted,ui.smallFont);
   }
   EndPaint(hwnd,&ps);
 }

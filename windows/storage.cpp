@@ -69,6 +69,7 @@ bool SecureFolder(const std::wstring& path){
 } // namespace
 std::wstring ConfigurationPath(){auto root=Root();return root.empty()?std::wstring{}:root+kDirectory+kFileName;}
 std::wstring LegacyConfigurationPath(){auto root=Root();return root.empty()?std::wstring{}:root+kLegacyDirectory+kFileName;}
+bool EnsureConfigurationDirectory(){auto root=Root();return !root.empty()&&SecureFolder(root+kDirectory);}
 void Wipe(std::wstring& s){
   if(!s.empty())SecureZeroMemory(s.data(),s.size()*sizeof(wchar_t));s.clear();
 }
@@ -156,9 +157,7 @@ bool SaveConfig(const Configuration& cfg){
      (cfg.mode!=Mode::low&&cfg.mode!=Mode::high&&cfg.mode!=Mode::remote)||
      (cfg.mode==Mode::high&&!kenvix::ValidPublicKey(cfg.trustedKey))||
      (cfg.mode==Mode::low&&cfg.lowAddress==0))return false;
-  auto root=Root();if(root.empty())return false;
-  const auto directory=root+kDirectory;
-  if(!SecureFolder(directory))return false;
+  if(!EnsureConfigurationDirectory())return false;
   std::vector<uint8_t> data;
   Put32(data,kMagic);Put32(data,kFormat);Put32(data,static_cast<uint32_t>(cfg.mode));
   Put32(data,static_cast<uint32_t>(cfg.minRssi));Put64(data,cfg.lowAddress);

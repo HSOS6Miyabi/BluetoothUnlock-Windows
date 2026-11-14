@@ -1,4 +1,5 @@
 #include "remote_storage.h"
+#include "tpm_protection.h"
 #include "storage.h"
 #include "remote_ipc.h"
 #include <windows.h>
@@ -55,6 +56,11 @@ std::wstring RemoteConfigurationPath(){
     auto pos=path.find_last_of(L"\\/");
     return pos==std::wstring::npos?std::wstring{}:path.substr(0,pos)+L"\\rustdesk.dat";
 }
+std::wstring LegacyRemoteConfigurationPath(){
+    auto path=LegacyConfigurationPath();
+    const auto pos=path.find_last_of(L"\\/");
+    return pos==std::wstring::npos?std::wstring{}:path.substr(0,pos)+L"\\rustdesk.dat";
+}
 bool EncryptRemoteApiKey(const std::wstring& key,std::vector<std::uint8_t>& encrypted){
     if(key.size()<10||key.size()>1024||key.rfind(L"rdapi_",0)!=0)return false;
     for(wchar_t c:key)if(c<=32||c>126)return false;
@@ -63,19 +69,27 @@ bool EncryptRemoteApiKey(const std::wstring& key,std::vector<std::uint8_t>& encr
     DATA_BLOB entropy{static_cast<DWORD>(sizeof(kEntropy)),
          reinterpret_cast<BYTE*>(const_cast<wchar_t*>(kEntropy))};
     DATA_BLOB cipher{};
-    if(!CryptProtectData(&plain,L"Kenvix RustDesk API Token",&entropy,nullptr,nullptr,
+    if(!CryptProtectData(&plain,L"Bluetooth Unlock RustDesk API Token",&entropy,nullptr,nullptr,
                          CRYPTPROTECT_LOCAL_MACHINE|CRYPTPROTECT_UI_FORBIDDEN,&cipher))return false;
-    encrypted.assign(cipher.pbData,cipher.pbData+cipher.cbData);
-    SecureZeroMemory(cipher.pbData,cipher.cbData);LocalFree(cipher.pbData);return true;
+    std::vector<std::uint8_t> dpapi(cipher.pbData,cipher.pbData+cipher.cbData);
+    SecureZeroMemory(cipher.pbData,cipher.cbData);LocalFree(cipher.pbData);
+    if(!ProtectWithTpm(dpapi,encrypted))encrypted=dpapi;
+    if(!dpapi.empty())SecureZeroMemory(dpapi.data(),dpapi.size());
+    return true;
 }
 bool DecryptRemoteApiKey(const std::vector<std::uint8_t>& encrypted,std::wstring& key){
     key.clear();if(encrypted.empty()||encrypted.size()>8192)return false;
-    DATA_BLOB cipher{static_cast<DWORD>(encrypted.size()),const_cast<BYTE*>(encrypted.data())};
+    std::vector<std::uint8_t> unsealed;
+    if(IsTpmProtected(encrypted)&&!UnprotectWithTpm(encrypted,unsealed))return false;
+    const auto& cipherBytes=IsTpmProtected(encrypted)?unsealed:encrypted;
+    DATA_BLOB cipher{static_cast<DWORD>(cipherBytes.size()),const_cast<BYTE*>(cipherBytes.data())};
     DATA_BLOB entropy{static_cast<DWORD>(sizeof(kEntropy)),
         reinterpret_cast<BYTE*>(const_cast<wchar_t*>(kEntropy))};
     DATA_BLOB plain{};
-    if(!CryptUnprotectData(&cipher,nullptr,&entropy,nullptr,nullptr,
-                          CRYPTPROTECT_UI_FORBIDDEN,&plain))return false;
+    const bool decrypted=CryptUnprotectData(&cipher,nullptr,&entropy,nullptr,nullptr,
+                          CRYPTPROTECT_UI_FORBIDDEN,&plain)!=0;
+    if(!unsealed.empty())SecureZeroMemory(unsealed.data(),unsealed.size());
+    if(!decrypted)return false;
     bool valid=plain.cbData>=sizeof(wchar_t)&&plain.cbData<=4096&&plain.cbData%sizeof(wchar_t)==0;
     if(valid){
         const auto count=plain.cbData/sizeof(wchar_t);
@@ -88,8 +102,12 @@ bool DecryptRemoteApiKey(const std::vector<std::uint8_t>& encrypted,std::wstring
     return valid;
 }
 bool ReadRemoteConfiguration(RemoteConfiguration& config){
-    const auto path=RemoteConfigurationPath();if(path.empty())return false;
+    auto path=RemoteConfigurationPath();if(path.empty())return false;
     HANDLE h=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+    if(h==INVALID_HANDLE_VALUE&&GetLastError()==ERROR_FILE_NOT_FOUND){
+        path=LegacyRemoteConfigurationPath();
+        h=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+    }
     if(h==INVALID_HANDLE_VALUE)return false;
     LARGE_INTEGER size{};
     bool valid=GetFileSizeEx(h,&size)&&size.QuadPart>=20&&size.QuadPart<=kMaxBytes;
@@ -115,7 +133,7 @@ bool SaveRemoteConfiguration(const RemoteConfiguration& config){
     if(!Validate(config))return false;
     // A Windows account has to be registered first; SaveConfig creates the restricted folder.
     Configuration local;
-    if(!ReadConfig(local))return false;
+    if(!ReadConfig(local)||!EnsureConfigurationDirectory())return false;
     const auto target=RemoteConfigurationPath();if(target.empty())return false;
     std::vector<std::uint8_t> bytes;
     Put32(bytes,kMagic);Put32(bytes,kVersion);Put32(bytes,(config.enabled?1u:0u)|(config.lockOnLastDisconnect?2u:0u)|(config.trustedEventsOnly?4u:0u));

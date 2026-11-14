@@ -1,5 +1,6 @@
 #include "remote_http.h"
 #include "remote_storage.h"
+#include "tpm_protection.h"
 #include "remote_settings.h"
 #include "service_manager.h"
 #include "ui_common.h"
@@ -166,6 +167,15 @@ void Save(Ui& ui){
     if(ui.busy)return;
     kb::RemoteConfiguration next;std::wstring error;
     if(!Current(ui,next,error)){SetWindowTextW(ui.status,error.c_str());return;}
+    if(!next.apiKeyEncrypted.empty()&&!kb::IsTpmProtected(next.apiKeyEncrypted)){
+        std::wstring previous;
+        if(kb::DecryptRemoteApiKey(next.apiKeyEncrypted,previous)){
+            std::vector<std::uint8_t> wrapped;
+            if(kb::EncryptRemoteApiKey(previous,wrapped)&&kb::IsTpmProtected(wrapped))
+                next.apiKeyEncrypted=std::move(wrapped);
+            kb::Wipe(previous);
+        }
+    }
     if(!kb::SaveRemoteConfiguration(next)){
         SetWindowTextW(ui.status,L"保存失败。请先保存 Windows 登录账户并以管理员权限运行。 ");return;
     }
