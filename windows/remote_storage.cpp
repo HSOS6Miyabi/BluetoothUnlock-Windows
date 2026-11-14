@@ -11,7 +11,9 @@ namespace {
 constexpr std::uint32_t kMagic=0x5253554b; // KUSR, little-endian
 constexpr std::uint32_t kVersion=1;
 constexpr std::size_t kMaxBytes=16384;
-constexpr wchar_t kEntropy[] = L"Kenvix.RemoteAPIKey.2026.v1";
+constexpr wchar_t kEntropy[] = L"BluetoothUnlock.RemoteAPIKey.v2";
+// Required for decrypting credentials saved by earlier releases.
+constexpr wchar_t kLegacyEntropy[] = L"Kenvix.RemoteAPIKey.2026.v1";
 void Put32(std::vector<std::uint8_t>& out,std::uint32_t value){
     for(unsigned i=0;i<4;++i)out.push_back(static_cast<std::uint8_t>((value>>(i*8))&0xff));
 }
@@ -86,8 +88,14 @@ bool DecryptRemoteApiKey(const std::vector<std::uint8_t>& encrypted,std::wstring
     DATA_BLOB entropy{static_cast<DWORD>(sizeof(kEntropy)),
         reinterpret_cast<BYTE*>(const_cast<wchar_t*>(kEntropy))};
     DATA_BLOB plain{};
-    const bool decrypted=CryptUnprotectData(&cipher,nullptr,&entropy,nullptr,nullptr,
+    bool decrypted=CryptUnprotectData(&cipher,nullptr,&entropy,nullptr,nullptr,
                           CRYPTPROTECT_UI_FORBIDDEN,&plain)!=0;
+    if(!decrypted){
+        DATA_BLOB legacyEntropy{static_cast<DWORD>(sizeof(kLegacyEntropy)),
+            reinterpret_cast<BYTE*>(const_cast<wchar_t*>(kLegacyEntropy))};
+        decrypted=CryptUnprotectData(&cipher,nullptr,&legacyEntropy,nullptr,nullptr,
+                         CRYPTPROTECT_UI_FORBIDDEN,&plain)!=0;
+    }
     if(!unsealed.empty())SecureZeroMemory(unsealed.data(),unsealed.size());
     if(!decrypted)return false;
     bool valid=plain.cbData>=sizeof(wchar_t)&&plain.cbData<=4096&&plain.cbData%sizeof(wchar_t)==0;

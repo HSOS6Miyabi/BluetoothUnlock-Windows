@@ -134,6 +134,15 @@ bool StopAndRemoveLegacyService(SC_HANDLE manager,std::wstring& error){
     CloseServiceHandle(old);
     return removed;
 }
+void RemoveLegacyConfigurationFiles(){
+    const auto path=std::filesystem::path(kb::LegacyConfigurationPath());
+    if(path.empty())return;
+    const auto parent=path.parent_path();
+    RemoveOrSchedule(path);
+    RemoveOrSchedule(parent/L"rustdesk.dat");
+    RemoveDirectoryW(parent.c_str());
+    RemoveDirectoryW(parent.parent_path().c_str());
+}
 void RemoveLegacyInstallFiles(){
     const auto old=LegacyInstallDirectory();
     if(old.empty())return;
@@ -217,6 +226,7 @@ bool kb::InstallApplication(std::wstring& message) {
     CloseServiceHandle(manager);
     if (!registered || !message.empty()) return false;
     RemoveLegacyInstallFiles();
+    RemoveLegacyConfigurationFiles();
     message = L"安装完成。已注册原生 Windows 登录选项并安装后台服务。请在设置窗口填写解锁信息。";
     return true;
 }

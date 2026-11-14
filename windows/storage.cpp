@@ -78,7 +78,7 @@ bool EncryptPassword(const std::wstring& plain,std::vector<uint8_t>& encrypted){
   DATA_BLOB input{static_cast<DWORD>((plain.size()+1)*sizeof(wchar_t)),
     reinterpret_cast<BYTE*>(const_cast<wchar_t*>(plain.c_str()))};
   DATA_BLOB output{};
-  if(!CryptProtectData(&input,L"Kenvix Bluetooth Unlock",nullptr,nullptr,nullptr,
+  if(!CryptProtectData(&input,L"Bluetooth Unlock",nullptr,nullptr,nullptr,
        CRYPTPROTECT_LOCAL_MACHINE|CRYPTPROTECT_UI_FORBIDDEN,&output)) return false;
   std::vector<uint8_t> dpapi(output.pbData,output.pbData+output.cbData);
   SecureZeroMemory(output.pbData,output.cbData);LocalFree(output.pbData);
