@@ -30,7 +30,7 @@ COLORREF kMuted=RGB(92,108,130);
 COLORREF kAccent=RGB(39,105,213);
 COLORREF kAccentText=RGB(255,255,255),kBorder=RGB(215,224,237),kSubtle=RGB(233,241,253);
 constexpr int cHigh=110,cLow=111,cDevices=112,cReadKey=113,cSlider=114,cUser=115,
-              cDomain=116,cPassword=117,cSave=118,cVerified=119,cStatus=120,cSignal=121,cFingerprint=122,cRemote=123,cOnlyRemote=124,cBleTab=125,cServiceTab=126;
+              cDomain=116,cPassword=117,cSave=118,cVerified=119,cStatus=120,cSignal=121,cFingerprint=122,cRemote=123,cOnlyRemote=124,cBleTab=125,cServiceTab=126,cScanHint=127;
 constexpr UINT msgKey=WM_APP+2,msgSave=WM_APP+3;
 struct KeyResult{uint64_t address{};bool ok{};kenvix::PublicKey key{};};
 struct SaveResult{bool ok{};std::wstring message;kb::Configuration saved;};
@@ -64,10 +64,11 @@ void Appearance(Ui& ui){
   HFONT smallText=kb::ui::MakeFont(ui.dpi,16);
   if(ui.font){
     for(HWND item:{ui.bleTab,ui.remote,ui.serviceTab,ui.high,ui.low,ui.remoteOnly,ui.devices,
-        ui.scanHint,ui.readKey,ui.slider,ui.username,ui.domain,ui.password,ui.save,ui.verified,
+        ui.readKey,ui.slider,ui.username,ui.domain,ui.password,ui.save,ui.verified,
         ui.status,ui.signal,ui.fingerprint})
       if(item)SendMessageW(item,WM_SETFONT,reinterpret_cast<WPARAM>(normal),FALSE);
   }
+  if(ui.scanHint)SendMessageW(ui.scanHint,WM_SETFONT,reinterpret_cast<WPARAM>(smallText),FALSE);
   if(ui.font)DeleteObject(ui.font);if(ui.heading)DeleteObject(ui.heading);
   if(ui.smallFont)DeleteObject(ui.smallFont);
   ui.font=normal;ui.heading=heading;ui.smallFont=smallText;
@@ -351,7 +352,7 @@ void CreateControls(Ui& ui){
     column.pszText=const_cast<wchar_t*>(headers[i]);column.cx=S(ui,i==0?260:i==1?190:130);
     ListView_InsertColumn(ui.devices,i,&column);
   }
-  ui.scanHint=Child(ui.host,L"STATIC",L"正在扫描附近的蓝牙设备…",SS_LEFT,cStatus+100);
+  ui.scanHint=Child(ui.host,L"STATIC",L"正在扫描附近的蓝牙设备…",SS_LEFT,cScanHint);
   ui.readKey=Child(ui.host,L"BUTTON",L"读取手机公钥",BS_OWNERDRAW,cReadKey);
   ui.slider=Child(ui.host,TRACKBAR_CLASSW,L"",TBS_AUTOTICKS,cSlider);
   ui.username=Child(ui.host,L"EDIT",L"",ES_AUTOHSCROLL|WS_TABSTOP|WS_BORDER,cUser);
