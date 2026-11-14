@@ -263,7 +263,7 @@ LRESULT CALLBACK WndProc(HWND hwnd,UINT msg,WPARAM w,LPARAM l){
 HWND kb::CreateRemoteSettingsPage(HWND parent){
     HINSTANCE instance=GetModuleHandleW(nullptr);
     WNDCLASSEXW klass{sizeof(klass)};klass.hInstance=instance;klass.lpfnWndProc=WndProc;
-    klass.lpszClassName=L"KenvixRustDeskSettingsPage";
+    klass.lpszClassName=L"BluetoothUnlockRemoteSettingsPage";
     klass.hCursor=LoadCursorW(nullptr,IDC_ARROW);
     klass.hbrBackground=reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH));
     if(!RegisterClassExW(&klass)&&GetLastError()!=ERROR_CLASS_ALREADY_EXISTS)return nullptr;

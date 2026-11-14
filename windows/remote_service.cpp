@@ -15,7 +15,7 @@
 #pragma comment(lib,"wtsapi32.lib")
 #pragma comment(lib,"advapi32.lib")
 namespace {
-constexpr wchar_t kServiceName[]=L"KenvixRustDeskUnlock";
+constexpr wchar_t kServiceName[]=L"BluetoothUnlockService";
 SERVICE_STATUS_HANDLE g_statusHandle{};
 SERVICE_STATUS g_status{};
 HANDLE g_stop{};
@@ -121,7 +121,7 @@ void Run(){
             if(tracker.ConnectionLost()==kenvix::remote::Action::lock)LockConsole(local);
             if(Stopping())break;
             if(!kb::ReadRemoteConfiguration(current)||!SettingsMatch(config,current))break;
-            if(!error.empty())OutputDebugStringW((L"Kenvix RustDesk SSE: "+error+L"\n").c_str());
+            if(!error.empty())OutputDebugStringW((L"Bluetooth Unlock RustDesk SSE: "+error+L"\n").c_str());
             HANDLE events[2]{g_stop,grant.ConfigurationChangedEvent()};
             DWORD wait=WaitForMultipleObjects(2,events,FALSE,retry);
             if(wait!=WAIT_TIMEOUT)break;

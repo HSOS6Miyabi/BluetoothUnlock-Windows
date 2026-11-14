@@ -39,7 +39,7 @@ jobs:
           New-Item -Type Directory -Path (Join-Path $stage 'windows') -Force | Out-Null
           New-Item -Type Directory -Path (Join-Path $stage 'build\windows\Release') -Force | Out-Null
           New-Item -Type Directory -Path (Join-Path $stage 'docs') -Force | Out-Null
-          foreach ($name in @('KenvixBleCredentialProvider.dll','KenvixBluetoothUnlock.exe')) {
+          foreach ($name in @('BluetoothUnlockCredentialProvider.dll','BluetoothUnlock.exe')) {
             $src = Join-Path 'build\windows\Release' $name
             if (-not (Test-Path $src)) { throw "Missing required artifact: $src" }
             Copy-Item $src (Join-Path $stage 'build\windows\Release')
@@ -48,7 +48,7 @@ jobs:
           Copy-Item docs/*.md (Join-Path $stage 'docs')
           Copy-Item README.md,VERSION $stage
           New-Item -Type Directory -Path dist -Force | Out-Null
-          $zip = "dist/KenvixBluetoothUnlock-Windows-x64-v$version.zip"
+          $zip = "dist/BluetoothUnlock-Windows-x64-v$version.zip"
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
           Get-FileHash -Algorithm SHA256 $zip | ForEach-Object { "{0}  {1}" -f $_.Hash.ToLowerInvariant(), (Split-Path $zip -Leaf) } | Set-Content "dist/SHA256SUMS.txt"
       - uses: actions/upload-artifact@v4
@@ -110,6 +110,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$tag" -m "Kenvix Bluetooth Unlock for Windows $tag"
+          git tag -a "$tag" -m "Bluetooth Unlock for Windows $tag"
           git push origin "refs/tags/$tag"
-          gh release create "$tag" release-files/* --verify-tag --title "Kenvix Bluetooth Unlock for Windows $tag" --generate-notes --latest
+          gh release create "$tag" release-files/* --verify-tag --title "Bluetooth Unlock for Windows $tag" --generate-notes --latest

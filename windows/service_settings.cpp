@@ -151,7 +151,7 @@ void Action(Ui& ui,int id){
     if(ui.busy)return;
     if(id==cUninstall){
         if(MessageBoxW(ui.wnd,L"确认卸载后台服务及 Windows 登录组件吗？\n可以继续使用 Windows 密码、PIN 和 Windows Hello 登录。",
-                L"卸载 Kenvix Bluetooth Unlock",MB_YESNO|MB_ICONWARNING|MB_DEFBUTTON2)!=IDYES)return;
+                L"卸载 Bluetooth Unlock",MB_YESNO|MB_ICONWARNING|MB_DEFBUTTON2)!=IDYES)return;
     }
     const bool keep=ui.keepSettings;
     ui.feedback=L"正在执行服务操作…";
@@ -244,7 +244,7 @@ HWND kb::CreateServiceSettingsPage(HWND parent){
     WNDCLASSEXW cls{sizeof(cls)};
     cls.hInstance=GetModuleHandleW(nullptr);
     cls.lpfnWndProc=WndProc;
-    cls.lpszClassName=L"KenvixServiceSettingsPage";
+    cls.lpszClassName=L"BluetoothUnlockServiceSettingsPage";
     cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);
     cls.hbrBackground=reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH));
     if(!RegisterClassExW(&cls)&&GetLastError()!=ERROR_CLASS_ALREADY_EXISTS)return nullptr;

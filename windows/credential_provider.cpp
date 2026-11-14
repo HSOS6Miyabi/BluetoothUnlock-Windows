@@ -134,7 +134,7 @@ public:
     if(!text)return E_POINTER;*text=nullptr;
     std::wstring value;
     switch(field){
-      case fTitle:value=L"Kenvix · 智能解锁";break;
+      case fTitle:value=L"蓝牙智能解锁";break;
       case fStatus:
         value=state_->failed.load()?L"身份验证失败，请使用密码登录并检查设置":
          state_->authorization.load()==2?L"RustDesk 连接认证成功，正在解锁":
@@ -334,7 +334,7 @@ public:
   HRESULT STDMETHODCALLTYPE GetFieldDescriptorAt(DWORD field,CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR** descriptor)override{
     if(!descriptor)return E_POINTER;*descriptor=nullptr;if(field>=fCount)return E_INVALIDARG;
     constexpr CREDENTIAL_PROVIDER_FIELD_TYPE types[]={CPFT_LARGE_TEXT,CPFT_SMALL_TEXT,CPFT_SUBMIT_BUTTON};
-    constexpr const wchar_t* names[]={L"Kenvix 智能解锁",L"认证状态",L"检查认证"};
+    constexpr const wchar_t* names[]={L"蓝牙智能解锁",L"认证状态",L"检查认证"};
     auto* value=static_cast<CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR*>(CoTaskMemAlloc(sizeof(CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR)));
     if(!value)return E_OUTOFMEMORY;ZeroMemory(value,sizeof(*value));
     value->dwFieldID=field;value->cpft=types[field];value->pszLabel=CopyWide(names[field]);
