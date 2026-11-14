@@ -244,9 +244,11 @@ public:
                                                  reinterpret_cast<void**>(&raw))))proxy.Attach(raw);
       try{
         if(!kb::IsTargetSessionLocked(cfg.username,cfg.domain))return;
-        kb::BleScanner scanner;scanner.Start();
+        kb::BleScanner scanner;
+        try{scanner.Start();}catch(...){} // Retry if Windows has temporarily stopped scanning.
         std::unordered_map<uint64_t,std::chrono::steady_clock::time_point> last;
         while(!stop.stop_requested()&&!state->consumed.load()&&state->authorization.load()==0){
+          scanner.EnsureRunning();
           for(const auto& dev:scanner.Snapshot()){
             if(stop.stop_requested())break;
             if(!kenvix::PassesSignal(dev.rssi,cfg.minRssi,dev.observations,dev.fresh))continue;

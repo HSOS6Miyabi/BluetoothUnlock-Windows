@@ -6,7 +6,7 @@ Windows 10/11 原生锁屏的蓝牙与 RustDesk API 解锁程序。Windows Crede
 
 - Windows C++20、Win32 与 Windows Runtime，提供原生登录凭据提供程序和统一设置窗口。
 - 兼容蓝牙低安全性手环存在检测和 Android Keystore ECDSA P-256 挑战响应认证。
-- 附近的蓝牙设备按名称、MAC 地址和信号强度显示为表格，过滤未提供名称的设备。
+- 蓝牙设备按名称、MAC 地址和信号强度显示为表格。普通 BLE 设备需要广播名称；手机广播本程序的服务 UUID 时，即使系统未返回名称，也会显示为“解锁服务设备（名称未广播）”。
 - 设置 RSSI 最低信号强度；界面自动跟随 Windows 应用浅色或深色模式，支持逐显示器 DPI 缩放与动态调整。
 - 可选 RustDesk API SSE 自动解锁和连接结束后锁定；支持目标设备 ID、来源设备 ID 限制与多连接状态管理。
 - Windows 账户密码与 RustDesk API Key 使用 DPAPI 加密；支持 TPM 的电脑还会使用 TPM 中的不可导出密钥进行保护。
@@ -29,6 +29,12 @@ ctest --test-dir build -C Release --output-on-failure
 也可以使用 `--install`、`--uninstall` 命令，或调用 `windows/install.ps1`、`windows/uninstall.ps1`。
 
 GitHub Actions 将编译 x64 版本、运行 C++ 自动化测试，并在默认分支构建成功且对应版本尚未发布时创建 Release。每个版本的压缩包包含一个 EXE、系统登录扩展 DLL、安装脚本及文档。安装 Credential Provider 前请确认能够使用密码正常登录 Windows，首次安装建议在测试电脑执行。
+
+## 蓝牙设备驻留与扫描恢复
+
+Windows 保留最近发现的设备，连续 6 个 30 秒时间段收不到广播后才从列表中移除（约 3 分钟）。暂停收到广播时，信号栏标为“上次 xx dBm”，方便辨认和再次选择设备。为了保护解锁安全，真正触发解锁仍要求最近 4 秒有有效广播，并完成原有的配对检查或随机挑战签名认证；历史显示记录不参与解锁。
+
+程序使用 Windows 主动 BLE 扫描，并自动尝试恢复被系统中断的扫描。设备列表不根据设备类别过滤；普通无名称广播仍不显示。Windows 发现手机需要 Android 应用在后台提供 BLE 外围设备广播，普通系统蓝牙开关处于开启状态并不保证手机会被 BLE 扫描发现。
 
 ## TPM 与旧版配置
 

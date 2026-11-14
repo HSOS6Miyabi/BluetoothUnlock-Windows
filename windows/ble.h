@@ -14,12 +14,14 @@ struct SeenDevice {
   unsigned observations{};
   bool phoneService{};
   bool fresh{};
+  unsigned missedWindows{};
 };
 class BleScanner {
 public:
   BleScanner(); ~BleScanner();
   BleScanner(const BleScanner&)=delete;BleScanner& operator=(const BleScanner&)=delete;
   void Start();void Stop();
+  bool EnsureRunning();
   std::vector<SeenDevice> Snapshot() const;
 private:
   struct Impl;std::unique_ptr<Impl> impl_;
