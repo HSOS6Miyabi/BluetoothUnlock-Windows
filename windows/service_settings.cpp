@@ -150,8 +150,12 @@ void DrawButton(DRAWITEMSTRUCT* item,Ui& ui){
 void Action(Ui& ui,int id){
     if(ui.busy)return;
     if(id==cUninstall){
-        if(MessageBoxW(ui.wnd,L"确认卸载后台服务及 Windows 登录组件吗？\n可以继续使用 Windows 密码、PIN 和 Windows Hello 登录。",
-                L"卸载 Bluetooth Unlock",MB_YESNO|MB_ICONWARNING|MB_DEFBUTTON2)!=IDYES)return;
+        const wchar_t* detail=ui.keepSettings?
+            L"将卸载后台服务与 Windows 登录组件，并保留已保存的设置。\n仍可使用 Windows 密码、PIN 和 Windows Hello 登录。":
+            L"将卸载后台服务与 Windows 登录组件，并删除已保存的设置。\n仍可使用 Windows 密码、PIN 和 Windows Hello 登录。";
+        if(kb::ui::ShowTaskDialog(ui.wnd,L"卸载 Bluetooth Unlock",
+                L"确认卸载后台服务与 Windows 登录组件？",detail,
+                TD_WARNING_ICON,TDCBF_YES_BUTTON|TDCBF_NO_BUTTON,IDNO)!=IDYES)return;
     }
     const bool keep=ui.keepSettings;
     ui.feedback=L"正在执行服务操作…";

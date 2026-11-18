@@ -572,15 +572,19 @@ int APIENTRY wWinMain(HINSTANCE inst,HINSTANCE,LPWSTR,int show){
     if(arg==L"--self-test"){
       const auto colors=kb::ui::Colors();
       const auto state=kb::QueryBackgroundService();
+      const HMODULE controls=GetModuleHandleW(L"comctl32.dll");
+      const bool modernControls=FindResourceW(inst,MAKEINTRESOURCEW(1),RT_MANIFEST)!=nullptr&&
+          controls&&GetProcAddress(controls,"TaskDialogIndirect")!=nullptr;
       return (kb::ui::Scale(144,20)==30&&colors.text!=colors.background&&
-          state.state!=kb::BackgroundServiceState::unknown)?0:1;
+          state.state!=kb::BackgroundServiceState::unknown&&modernControls)?0:1;
     }
     if(arg==L"--install"||arg==L"--uninstall"||arg==L"--uninstall-keep-settings"){
       if(!Elevated())return RelaunchElevated(arg.c_str(),true);
       std::wstring result;
       const bool ok=arg==L"--install"?kb::InstallApplication(result):kb::UninstallApplication(arg==L"--uninstall-keep-settings",result);
-      MessageBoxW(nullptr,result.c_str(),L"Bluetooth Unlock",
-          MB_OK|(ok?MB_ICONINFORMATION:MB_ICONERROR));
+      kb::ui::ShowTaskDialog(nullptr,L"Bluetooth Unlock",
+          ok?L"操作已完成":L"操作失败",result.c_str(),
+          ok?TD_INFORMATION_ICON:TD_ERROR_ICON);
       return ok?0:1;
     }
   }else if(argv)LocalFree(argv);

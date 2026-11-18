@@ -1,5 +1,6 @@
 #pragma once
 #include <windows.h>
+#include <commctrl.h>
 #include <dwmapi.h>
 #include <algorithm>
 
@@ -50,6 +51,32 @@ inline void Titlebar(HWND window, bool dark) {
     DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE,
                           &enabled, sizeof(enabled));
 }
+
+inline HRESULT CALLBACK TaskDialogTheme(HWND dialog, UINT notification, WPARAM, LPARAM, LONG_PTR) {
+    if (notification == TDN_CREATED) Titlebar(dialog, SystemDark());
+    return S_OK;
+}
+inline int ShowTaskDialog(HWND owner, const wchar_t* title, const wchar_t* heading,
+                          const wchar_t* detail, PCWSTR icon,
+                          unsigned int buttons = TDCBF_OK_BUTTON,
+                          int defaultButton = IDOK) {
+    TASKDIALOGCONFIG config{sizeof(config)};
+    config.hwndParent = owner;
+    UINT flags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_SIZE_TO_CONTENT;
+    if (owner) flags |= TDF_POSITION_RELATIVE_TO_WINDOW;
+    config.dwFlags = static_cast<TASKDIALOG_FLAGS>(flags);
+    config.dwCommonButtons = static_cast<TASKDIALOG_COMMON_BUTTON_FLAGS>(buttons);
+    config.pszWindowTitle = title;
+    config.pszMainInstruction = heading;
+    config.pszContent = detail;
+    config.pszMainIcon = icon;
+    config.nDefaultButton = defaultButton;
+    config.pfCallback = TaskDialogTheme;
+    int selected = IDCANCEL;
+    if (FAILED(TaskDialogIndirect(&config, &selected, nullptr, nullptr))) return IDCANCEL;
+    return selected;
+}
+
 inline void Rounded(HDC dc, RECT rect, COLORREF color, int radius) {
     const HBRUSH brush = CreateSolidBrush(color);
     const HPEN pen = CreatePen(PS_SOLID, 1, color);
