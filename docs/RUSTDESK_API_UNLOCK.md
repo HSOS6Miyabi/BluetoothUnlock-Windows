@@ -20,7 +20,7 @@
 密钥只需要 `events.read` 权限。Windows 通过以下地址保持 SSE 连接：
 
 ```http
-GET /api/events/v1/stream?events=connection.authenticated,connection.ended
+GET /api/events/v1/stream?events=connection.authenticated,connection.ended,connection.trusted_authenticated,connection.trusted_ended
 Authorization: Bearer rdapi_你的密钥
 Accept: text/event-stream
 ```
@@ -68,6 +68,12 @@ API Key 保存在本机访问受限的配置目录，使用 Windows DPAPI 加密
 ```
 
 `connection.ended` 使用相同格式，`type` 改为 `connection.ended`；连接结束审计可能省略 `from_peer`，本程序仍会根据 `connection_id` 清理对应连接。
+
+## 普通事件与可信事件模式
+
+Windows 的订阅请求会包含常规事件 `connection.authenticated`、`connection.ended` 和可选的 `connection.trusted_authenticated`、`connection.trusted_ended`。界面选用“仅使用可信服务器事件”时，客户端仅处理 `connection.trusted_*` 类型。
+
+截至 2026-11-19，已核对的 [rustdesk-api](https://github.com/HSOS6Miyabi/rustdesk-api) 常规连接事件目录包含 `connection.authenticated` 和 `connection.ended`；启用可信事件模式之前，需要确认部署的服务端已实现、发布并严格保护相应可信事件。**事件名称本身不能证明事件产生于经过身份验证的远程会话。** 当服务端尚未提供这些事件时，选择可信事件模式会使 Windows 无法依赖此模式触发解锁。安全敏感的部署应核实审计上报接口的身份验证、事件来源和发布权限。
 
 ## 连接中断后的处理
 

@@ -73,3 +73,7 @@ Android 应用位于独立仓库：[BluetoothUnlock-Android](https://github.com/
 ## 其他文档
 
 [协议](docs/PROTOCOL.md) · [安全](docs/SECURITY.md) · [测试](docs/TESTING.md) · [安装和故障处理](docs/OPERATIONS.md)。
+
+## 交接、维护和开发文档
+
+新维护人员请先阅读 [项目交接指南](docs/HANDOVER.md)，再按需阅读 [架构与模块导航](docs/ARCHITECTURE.md)、[项目台账](docs/PROJECT_LEDGER.md)、[开发和发布流程](docs/DEVELOPMENT.md) 及 [实体设备测试记录](docs/DEVICE_TEST_RECORD.md)。文档链接和应用版本可以执行 `python scripts/check_docs.py` 检查。
