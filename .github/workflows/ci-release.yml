@@ -20,6 +20,9 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+      - name: Validate documentation and version metadata
+        shell: pwsh
+        run: python scripts/check_docs.py
       - name: Configure Visual Studio CMake project
         shell: pwsh
         run: cmake -S . -B build -A x64 -DBUILD_TESTING=ON
